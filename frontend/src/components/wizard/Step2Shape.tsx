@@ -1,7 +1,3 @@
-// Step 2 — Shape naming + optional AI-assisted NL parsing.
-// The user names the NodeShape.  They can also optionally toggle AI-assisted
-// mode and describe their data in plain English to get properties pre-filled.
-
 import { useState } from 'react'
 import { parseNaturalLanguage } from '@/api/backend'
 import type { WizardState } from '@/types'
@@ -13,21 +9,15 @@ interface Props {
 
 export function Step2Shape({ state, update }: Props) {
   const [parsing, setParsing] = useState(false)
-  const [parseError, setParseError] = useState('')
-  const [parseSource, setParseSource] = useState('')
 
   const handleParse = async () => {
     if (!state.nlDescription.trim()) return
     setParsing(true)
-    setParseError('')
-
     try {
       const result = await parseNaturalLanguage(state)
       update({ properties: result.properties, nlParsed: true })
-      setParseSource(result.source)
-    } catch (error) {
-      setParseError(error instanceof Error ? error.message : 'Could not parse the description.')
-      update({ nlParsed: false })
+    } catch (err) {
+      console.error('NL parse failed:', err)
     } finally {
       setParsing(false)
     }
@@ -89,7 +79,6 @@ export function Step2Shape({ state, update }: Props) {
               Describe your data in plain English — AI will suggest properties and constraints.
             </p>
           </div>
-          {/* Toggle switch */}
           <button
             role="switch"
             aria-checked={state.useNL}
@@ -112,7 +101,7 @@ export function Step2Shape({ state, update }: Props) {
             <textarea
               value={state.nlDescription}
               onChange={e => update({ nlDescription: e.target.value, nlParsed: false })}
-              placeholder={`e.g. "A ${state.targetValue || 'Person'} must have exactly one name, at least one email address, and an optional age between 0 and 150."`}
+              placeholder="Describe what your data must look like. e.g. A Person must have exactly one name, at least one email address, and an optional age between 0 and 150."
               className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-zinc-200 resize-none
                 focus:outline-none focus:border-zinc-400 bg-white"
             />
@@ -139,14 +128,8 @@ export function Step2Shape({ state, update }: Props) {
             </button>
             {state.nlParsed && (
               <p className="text-xs text-emerald-600">
-                Found {state.properties.length} propert{state.properties.length === 1 ? 'y' : 'ies'}
-                {parseSource ? ` via ${parseSource}` : ''}.
+                Found {state.properties.length} propert{state.properties.length === 1 ? 'y' : 'ies'}.
                 Review them in the next step.
-              </p>
-            )}
-            {parseError && (
-              <p className="text-xs text-red-500">
-                {parseError}
               </p>
             )}
           </div>

@@ -247,6 +247,13 @@ export function Step5Output({ state, update }: Props) {
                     <span className="mono text-[11px] text-zinc-500">{v.property}</span>
                   </div>
                   <p className="text-xs text-zinc-500">{v.message}</p>
+                  {(v.severity || v.value) && (
+                    <p className="text-[10px] text-zinc-400 mono mt-1">
+                      {v.severity ? v.severity.replace('sh:', '') : ''}
+                      {v.severity && v.value ? ' · ' : ''}
+                      {v.value ?? ''}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

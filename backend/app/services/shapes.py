@@ -55,7 +55,7 @@ def build_shapes_graph(state: WizardState, base_uri: str) -> tuple[Graph, str]:
 def serialize_shapes_graph(graph: Graph, base_uri: str) -> dict[str, str]:
     return {
         "turtle": _serialize(graph, "turtle"),
-        "jsonld": _serialize(graph, "json-ld"),
+        "jsonld": _serialize_as_jsonld(graph, base_uri),
         "rdfxml": _serialize(graph, "xml"),
         "trig": _serialize_as_trig(graph, base_uri),
     }
@@ -67,10 +67,10 @@ def _add_constraints(graph: Graph, subject: BNode, c: PropertyConstraints, base_
     _add_int(graph, subject, SH.minLength, c.min_length, "minLength")
     _add_int(graph, subject, SH.maxLength, c.max_length, "maxLength")
 
-    _add_decimal(graph, subject, SH.minInclusive, c.min_inclusive, "minInclusive")
-    _add_decimal(graph, subject, SH.maxInclusive, c.max_inclusive, "maxInclusive")
-    _add_decimal(graph, subject, SH.minExclusive, c.min_exclusive, "minExclusive")
-    _add_decimal(graph, subject, SH.maxExclusive, c.max_exclusive, "maxExclusive")
+    _add_numeric(graph, subject, SH.minInclusive, c.min_inclusive, "minInclusive", c.datatype)
+    _add_numeric(graph, subject, SH.maxInclusive, c.max_inclusive, "maxInclusive", c.datatype)
+    _add_numeric(graph, subject, SH.minExclusive, c.min_exclusive, "minExclusive", c.datatype)
+    _add_numeric(graph, subject, SH.maxExclusive, c.max_exclusive, "maxExclusive", c.datatype)
 
     if c.datatype:
         graph.add((subject, SH.datatype, _curie_or_uri(c.datatype, base_uri)))
@@ -81,9 +81,7 @@ def _add_constraints(graph: Graph, subject: BNode, c: PropertyConstraints, base_
     if c.class_:
         graph.add((subject, SH["class"], _resource(c.class_, base_uri)))
     if c.in_:
-        _add_rdf_list(graph, subject, SH["in"], [Literal(item) for item in _split_csv(c.in_)])
-    if c.language_in:
-        _add_rdf_list(graph, subject, SH.languageIn, [Literal(item) for item in _split_csv(c.language_in)])
+        _add_rdf_list(graph, subject, SH["in"], [Literal(item) for item in _split_in_values(c.in_)])
 
 
 def _add_int(graph: Graph, subject: BNode, predicate: URIRef, value: str | None, label: str) -> None:
@@ -96,14 +94,23 @@ def _add_int(graph: Graph, subject: BNode, predicate: URIRef, value: str | None,
     graph.add((subject, predicate, literal))
 
 
-def _add_decimal(graph: Graph, subject: BNode, predicate: URIRef, value: str | None, label: str) -> None:
+def _add_numeric(graph: Graph, subject: BNode, predicate: URIRef, value: str | None, label: str, datatype: str | None = None) -> None:
     if value is None:
         return
     try:
-        literal = Literal(Decimal(value), datatype=XSD.decimal)
+        if _is_integer_datatype(datatype):
+            literal = Literal(int(value), datatype=XSD.integer)
+        else:
+            literal = Literal(Decimal(value), datatype=XSD.decimal)
     except (InvalidOperation, ValueError) as exc:
-        raise ValueError(f"{label} must be a decimal number") from exc
+        raise ValueError(f"{label} must be a number") from exc
     graph.add((subject, predicate, literal))
+
+
+def _is_integer_datatype(datatype: str | None) -> bool:
+    if not datatype:
+        return False
+    return datatype.strip() in {"xsd:integer", str(XSD.integer)}
 
 
 def _add_rdf_list(graph: Graph, subject: BNode, predicate: URIRef, values: list[Literal]) -> None:
@@ -116,6 +123,14 @@ def _add_rdf_list(graph: Graph, subject: BNode, predicate: URIRef, values: list[
 
 def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _split_in_values(value: str) -> list[str]:
+    if "," in value:
+        parts = value.split(",")
+    else:
+        parts = re.findall(r'"[^"]*"|\'[^\']*\'|\S+', value)
+    return [p.strip().strip("\"'") for p in parts if p.strip().strip("\"'")]
 
 
 def _bind_namespaces(graph: Graph | Dataset, base_uri: str) -> None:
@@ -167,6 +182,19 @@ def _base(base_uri: str) -> str:
 
 def _serialize(graph: Graph, rdf_format: str) -> str:
     serialized = graph.serialize(format=rdf_format)
+    return serialized.decode("utf-8") if isinstance(serialized, bytes) else serialized
+
+
+def _serialize_as_jsonld(graph: Graph, base_uri: str) -> str:
+    context = {
+        "sh":   str(SH),
+        "xsd":  str(XSD),
+        "rdf":  str(RDF),
+        "rdfs": str(RDFS),
+        "owl":  str(OWL),
+        "ex":   _base(base_uri),
+    }
+    serialized = graph.serialize(format="json-ld", context=context)
     return serialized.decode("utf-8") if isinstance(serialized, bytes) else serialized
 
 

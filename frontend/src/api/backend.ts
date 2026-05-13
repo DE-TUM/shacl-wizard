@@ -49,6 +49,24 @@ export function parseNaturalLanguage(state: WizardState): Promise<ParseNLRespons
   })
 }
 
+export function suggestProperties(
+  shapeName: string,
+  targetValue: string,
+  targetType: string
+): Promise<ParseNLResponse> {
+  const name = shapeName || targetValue || 'Entity'
+  return requestJson<ParseNLResponse>('/api/parse-nl', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      description: `Suggest the most common properties for a ${name} shape`,
+      targetType: targetType || 'class',
+      targetValue: targetValue,
+      shapeName: shapeName,
+    }),
+  })
+}
+
 export function generateShapes(state: WizardState): Promise<GenerateResponse> {
   return requestJson<GenerateResponse>('/api/generate', {
     method: 'POST',

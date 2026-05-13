@@ -15,6 +15,8 @@ interface Props {
 export function Step4Constraints({ state, update }: Props) {
   const [activeId, setActiveId]         = useState<string | null>(null)
   const [draft,    setDraft]            = useState<PropertyConstraints>({})
+  const [editingName, setEditingName]   = useState(false)
+  const [nameValue,   setNameValue]     = useState('')
 
   const activeProperty = state.properties.find(p => p.id === activeId) ?? null
 
@@ -76,6 +78,39 @@ export function Step4Constraints({ state, update }: Props) {
       {/* Constraint editor */}
       {activeProperty ? (
         <div className="space-y-4 fade-up">
+
+          {/* Editable property name */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-400">Editing:</span>
+            {editingName ? (
+              <input
+                autoFocus
+                value={nameValue}
+                onChange={e => setNameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === activeId ? { ...p, path: nameValue.trim() } : p) })
+                    setEditingName(false)
+                  }
+                  if (e.key === 'Escape') setEditingName(false)
+                }}
+                onBlur={() => {
+                  if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === activeId ? { ...p, path: nameValue.trim() } : p) })
+                  setEditingName(false)
+                }}
+                className="mono text-sm font-medium border-b border-zinc-400 outline-none bg-transparent"
+              />
+            ) : (
+              <button
+                onClick={() => { setEditingName(true); setNameValue(activeProperty.path) }}
+                className="mono text-sm font-medium text-zinc-800 hover:text-emerald-700 transition-colors"
+                title="Click to rename"
+              >
+                ex:{activeProperty.path}
+              </button>
+            )}
+          </div>
+
           <div className="p-4 border border-zinc-200 rounded-xl space-y-5">
 
             {/* ── Cardinality ── */}

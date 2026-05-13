@@ -63,24 +63,86 @@ minExclusive, maxExclusive, minLength, maxLength, in, class, languageIn.
 
 Prefer common SHACL/XSD CURIEs such as xsd:string, xsd:integer, xsd:decimal,
 xsd:date, xsd:boolean, xsd:anyURI, sh:IRI, sh:Literal, and sh:BlankNode.
+
+Never set both minInclusive and minExclusive at the same time, and never set
+both maxInclusive and maxExclusive at the same time. When a user says "between
+X and Y", use only minInclusive and maxInclusive. Only use exclusive bounds if
+the user explicitly says "more than" or "less than" (strictly).
 """.strip()
 
 
 def parse_natural_language(request: ParseNLRequest, settings: Settings) -> ParseNLResponse:
+    if settings.requires_groq and not settings.groq_api_key:
+        h = parse_with_heuristics(request)
+        h.warnings.append("LLM_PROVIDER=groq but GROQ_API_KEY is missing.")
+        return h
+
     if settings.requires_gemini and not settings.gemini_api_key:
-        heuristic = parse_with_heuristics(request)
-        heuristic.warnings.append("LLM_PROVIDER=gemini is set, but GEMINI_API_KEY is missing.")
-        return heuristic
+        h = parse_with_heuristics(request)
+        h.warnings.append("LLM_PROVIDER=gemini but GEMINI_API_KEY is missing.")
+        return h
 
-    if not settings.should_try_gemini:
-        return parse_with_heuristics(request)
+    groq_warning: str | None = None
 
+    if settings.should_try_groq:
+        try:
+            return parse_with_groq(request, settings)
+        except Exception as exc:
+            groq_warning = f"Groq parser failed: {exc}"
+
+    if settings.should_try_gemini:
+        try:
+            result = parse_with_gemini(request, settings)
+            if groq_warning:
+                result.warnings.append(groq_warning)
+            return result
+        except Exception as exc:
+            h = parse_with_heuristics(request)
+            if groq_warning:
+                h.warnings.append(groq_warning)
+            h.warnings.append(f"Gemini parser failed; heuristic parser used instead: {exc}")
+            return h
+
+    h = parse_with_heuristics(request)
+    if groq_warning:
+        h.warnings.append(groq_warning)
+    return h
+
+
+def parse_with_groq(request: ParseNLRequest, settings: Settings) -> ParseNLResponse:
     try:
-        return parse_with_gemini(request, settings)
-    except Exception as exc:  # pragma: no cover - depends on external provider
-        heuristic = parse_with_heuristics(request)
-        heuristic.warnings.append(f"Gemini parser failed; heuristic parser used instead: {exc}")
-        return heuristic
+        from groq import Groq
+    except ImportError as exc:
+        raise RuntimeError("groq package is not installed") from exc
+
+    client = Groq(api_key=settings.groq_api_key)
+    response = client.chat.completions.create(
+        model=settings.groq_model,
+        messages=[
+            {"role": "system", "content": SYSTEM_INSTRUCTIONS},
+            {"role": "user", "content": _build_user_message(request)},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+    )
+    raw_text = response.choices[0].message.content or ""
+    payload = json.loads(raw_text)
+    properties = [
+        PropertyShape(
+            path=item["path"],
+            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}))),
+        )
+        for item in payload.get("properties", [])
+        if item.get("path")
+    ]
+    if not properties:
+        raise ValueError("LLM returned no properties")
+
+    return ParseNLResponse(
+        properties=properties,
+        summary=payload.get("summary", []),
+        source="groq",
+    )
 
 
 def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLResponse:
@@ -102,7 +164,10 @@ def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLRes
     raw_text = _extract_response_text(response)
     payload = json.loads(raw_text)
     properties = [
-        PropertyShape(path=item["path"], constraints=PropertyConstraints(**item.get("constraints", {})))
+        PropertyShape(
+            path=item["path"],
+            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}))),
+        )
         for item in payload.get("properties", [])
         if item.get("path")
     ]
@@ -116,7 +181,27 @@ def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLRes
     )
 
 
-def _build_prompt(request: ParseNLRequest) -> str:
+def _normalize_constraints(raw: dict) -> dict:
+    result = dict(raw)
+    if result.get("in"):
+        result["in"] = _normalize_in_value(result["in"])
+    if result.get("minInclusive"):
+        result["minExclusive"] = None
+    if result.get("maxInclusive"):
+        result["maxExclusive"] = None
+    return result
+
+
+def _normalize_in_value(value: str) -> str:
+    if "," in value:
+        tokens = [t.strip().strip("\"'") for t in value.split(",")]
+    else:
+        tokens = re.findall(r'"[^"]*"|\'[^\']*\'|\S+', value)
+        tokens = [t.strip("\"'") for t in tokens]
+    return ",".join(t for t in tokens if t)
+
+
+def _build_user_message(request: ParseNLRequest) -> str:
     context = {
         "description": request.description,
         "targetType": request.target_type,
@@ -124,13 +209,16 @@ def _build_prompt(request: ParseNLRequest) -> str:
         "shapeName": request.shape_name,
     }
     return (
-        f"{SYSTEM_INSTRUCTIONS}\n\n"
         "Parse this wizard request into SHACL property constraints. "
         "Return JSON only and match this JSON schema:\n"
         f"{json.dumps(LLM_SCHEMA, ensure_ascii=True, indent=2)}\n\n"
         "Input:\n"
         f"{json.dumps(context, ensure_ascii=True, indent=2)}"
     )
+
+
+def _build_prompt(request: ParseNLRequest) -> str:
+    return f"{SYSTEM_INSTRUCTIONS}\n\n{_build_user_message(request)}"
 
 
 def _extract_response_text(response: Any) -> str:
@@ -270,10 +358,10 @@ def _nearby_text(text: str, keywords: list[str], radius: int = 80) -> str:
 def _fold_text(text: str) -> str:
     return (
         text.lower()
-        .replace("\u00e4", "ae")
-        .replace("\u00f6", "oe")
-        .replace("\u00fc", "ue")
-        .replace("\u00df", "ss")
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
     )
 
 

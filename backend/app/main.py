@@ -42,6 +42,8 @@ def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
         "llmProvider": settings.llm_provider,
+        "groqConfigured": bool(settings.groq_api_key),
+        "groqModel": settings.groq_model,
         "geminiConfigured": bool(settings.gemini_api_key),
         "geminiModel": settings.gemini_model,
     }

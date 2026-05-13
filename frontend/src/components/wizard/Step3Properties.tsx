@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
+import { suggestProperties } from '@/api/backend'
 
 function uid() {
   return Math.random().toString(36).slice(2, 8)
@@ -12,8 +13,28 @@ interface Props {
 
 export function Step3Properties({ state, update }: Props) {
   const [input, setInput] = useState('')
+  const [pillSuggestions, setPillSuggestions] = useState<string[]>([])
+  const [loadingPills, setLoadingPills] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
-  const suggestions = state.suggestedProperties.filter(
+  useEffect(() => {
+    if (state.nlParsed) return
+    setLoadingPills(true)
+    suggestProperties(state.shapeName, state.targetValue, state.targetType || 'class')
+      .then(result => setPillSuggestions(result.properties.map(p => p.path)))
+      .catch(() => {})
+      .finally(() => setLoadingPills(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pills that haven't been added yet — reappear automatically when a property is removed
+  const availablePills = pillSuggestions.filter(
+    s => !state.properties.find(p => p.path === s)
+  )
+
+  const showOverlay = input === '' && !state.nlParsed && (loadingPills || availablePills.length > 0)
+
+  const uploadSuggestions = state.suggestedProperties.filter(
     p => !state.properties.find(prop => prop.path === p)
   )
 
@@ -29,6 +50,16 @@ export function Step3Properties({ state, update }: Props) {
     update({ properties: state.properties.filter(p => p.id !== id) })
   }
 
+  const commitRename = (id: string, newPath: string) => {
+    const trimmed = newPath.trim()
+    if (trimmed) {
+      update({
+        properties: state.properties.map(p => p.id === id ? { ...p, path: trimmed } : p),
+      })
+    }
+    setEditingId(null)
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -41,16 +72,48 @@ export function Step3Properties({ state, update }: Props) {
         </p>
       </div>
 
+      {/* Input with floating pill overlay */}
       <div className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addProperty()}
-          placeholder="Property name, e.g. name, email, birthDate"
-          className="flex-1 h-9 px-3 rounded-md border border-zinc-200 text-sm mono
-            focus:outline-none focus:border-zinc-400"
-        />
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addProperty()}
+            className="w-full h-9 px-3 rounded-md border border-zinc-200 text-sm mono
+              focus:outline-none focus:border-zinc-400"
+          />
+
+          {/* Pill overlay — only shown when input is empty */}
+          {showOverlay && (
+            <div className="absolute inset-0 flex items-center px-2 pointer-events-none overflow-hidden rounded-md">
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                {loadingPills ? (
+                  [0, 1, 2].map(i => (
+                    <span
+                      key={i}
+                      className="w-1.5 h-1.5 rounded-full bg-zinc-300 pulse-dot inline-block shrink-0"
+                      style={{ animationDelay: `${i * 0.2}s` }}
+                    />
+                  ))
+                ) : (
+                  availablePills.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => addProperty(s)}
+                      className="pointer-events-auto px-2.5 py-0.5 rounded-full border border-zinc-300
+                        bg-white text-zinc-500 hover:bg-emerald-50 hover:border-emerald-400
+                        hover:text-emerald-700 transition-colors text-[11px] mono shrink-0"
+                    >
+                      {s}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button
           onClick={() => addProperty()}
           className="px-4 h-9 rounded-md bg-zinc-900 text-white text-sm hover:bg-zinc-700 transition-colors shrink-0"
@@ -59,13 +122,14 @@ export function Step3Properties({ state, update }: Props) {
         </button>
       </div>
 
-      {state.mode === 'upload' && suggestions.length > 0 && (
+      {/* Upload-mode suggestions */}
+      {state.mode === 'upload' && uploadSuggestions.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">
             Detected in your file:
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {suggestions.map(s => (
+            {uploadSuggestions.map(s => (
               <button
                 key={s}
                 onClick={() => addProperty(s)}
@@ -79,6 +143,7 @@ export function Step3Properties({ state, update }: Props) {
         </div>
       )}
 
+      {/* Property list */}
       {state.properties.length > 0 ? (
         <div className="space-y-2">
           {state.properties.map(prop => (
@@ -88,9 +153,23 @@ export function Step3Properties({ state, update }: Props) {
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="mono text-sm font-medium text-zinc-800">
-                    ex:{prop.path}
-                  </span>
+                  {editingId === prop.id ? (
+                    <input
+                      autoFocus
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') commitRename(prop.id, editValue)
+                        if (e.key === 'Escape') setEditingId(null)
+                      }}
+                      onBlur={() => commitRename(prop.id, editValue)}
+                      className="mono text-sm font-medium text-zinc-800 border-b border-zinc-400 outline-none bg-transparent w-32"
+                    />
+                  ) : (
+                    <span className="mono text-sm font-medium text-zinc-800">
+                      ex:{prop.path}
+                    </span>
+                  )}
                   {Object.keys(prop.constraints).length > 0 && (
                     <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
                       {Object.keys(prop.constraints).length} rules
@@ -98,12 +177,20 @@ export function Step3Properties({ state, update }: Props) {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => removeProperty(prop.id)}
-                className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-zinc-200 hover:border-red-200 transition-colors ml-2 shrink-0"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-1 ml-2 shrink-0">
+                <button
+                  onClick={() => { setEditingId(prop.id); setEditValue(prop.path) }}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 px-2 py-1 rounded border border-zinc-200 hover:border-zinc-300 transition-colors"
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={() => removeProperty(prop.id)}
+                  className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-zinc-200 hover:border-red-200 transition-colors"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           ))}
         </div>

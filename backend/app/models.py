@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 TargetType = Literal["class", "node", "subjectsOf", "objectsOf"]
 OutputTab = Literal["turtle", "jsonld", "rdfxml", "trig"]
 ValidationStatus = Literal["valid", "invalid"]
-ParserSource = Literal["gemini", "heuristic"]
+ParserSource = Literal["groq", "gemini", "heuristic"]
 
 
 def make_id() -> str:

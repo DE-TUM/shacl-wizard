@@ -106,6 +106,8 @@ def parse_natural_language(request: ParseNLRequest, settings: Settings) -> Parse
     h = parse_with_heuristics(request)
     if groq_warning:
         h.warnings.append(groq_warning)
+    elif not settings.should_try_groq and not settings.should_try_gemini:
+        h.warnings.append("No LLM API keys configured; using heuristic parser.")
     return h
 
 

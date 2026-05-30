@@ -41,7 +41,8 @@ export function Step3Properties({ state, update }: Props) {
   const addProperty = (path?: string) => {
     const p = (path ?? input).trim()
     if (!p || p.toLowerCase() === state.targetValue.toLowerCase()) return
-    const prop: PropertyShape = { id: uid(), path: p, constraints: {} }
+    const inferred = state.suggestedConstraints?.[p] ?? {}
+    const prop: PropertyShape = { id: uid(), path: p, constraints: inferred }
     update({ properties: [...state.properties, prop] })
     setInput('')
   }

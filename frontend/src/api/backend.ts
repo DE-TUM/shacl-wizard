@@ -3,7 +3,7 @@ import type { GenerateResponse, ParseResponse, PropertyShape, WizardState } from
 export interface ParseNLResponse {
   properties: PropertyShape[]
   summary: string[]
-  source: 'gemini' | 'heuristic'
+  source: 'groq' | 'gemini' | 'heuristic'
   warnings: string[]
 }
 
@@ -68,6 +68,7 @@ export function suggestProperties(
 }
 
 export function generateShapes(state: WizardState): Promise<GenerateResponse> {
+  // state already contains completedShapes — serialising the whole object is intentional
   return requestJson<GenerateResponse>('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

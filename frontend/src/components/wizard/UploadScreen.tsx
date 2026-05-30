@@ -12,12 +12,18 @@ export function UploadScreen({ update, onBack }: Props) {
   const [parseError, setParseError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const applyParsedGraph = (filename: string, classes: string[], properties: string[]) => {
+  const applyParsedGraph = (
+    filename: string,
+    classes: string[],
+    properties: string[],
+    suggestedConstraints: WizardState['suggestedConstraints'],
+  ) => {
     update({
-      uploadedFileName:    filename,
-      suggestedClasses:    classes,
-      suggestedProperties: properties,
-      step:                0,
+      uploadedFileName:     filename,
+      suggestedClasses:     classes,
+      suggestedProperties:  properties,
+      suggestedConstraints: suggestedConstraints,
+      step:                 0,
     })
   }
 
@@ -26,8 +32,8 @@ export function UploadScreen({ update, onBack }: Props) {
     setParseError('')
 
     try {
-      const { classes, properties } = await parseRdfFile(file)
-      applyParsedGraph(file.name, classes, properties)
+      const { classes, properties, suggestedConstraints = {} } = await parseRdfFile(file)
+      applyParsedGraph(file.name, classes, properties, suggestedConstraints)
     } catch (error) {
       setParseError(error instanceof Error ? error.message : 'Could not parse the RDF file.')
     } finally {
@@ -41,8 +47,8 @@ export function UploadScreen({ update, onBack }: Props) {
     setParseError('')
 
     try {
-      const { classes, properties } = await parseRdfText(graphText)
-      applyParsedGraph('pasted-graph.ttl', classes, properties)
+      const { classes, properties, suggestedConstraints = {} } = await parseRdfText(graphText)
+      applyParsedGraph('pasted-graph.ttl', classes, properties, suggestedConstraints)
     } catch (error) {
       setParseError(error instanceof Error ? error.message : 'Could not parse the pasted Turtle.')
     } finally {

@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import { INITIAL_STATE } from '@/types'
-import type { WizardState } from '@/types'
+import type { WizardState, CompletedShape } from '@/types'
 
 import { ModeSelect }       from '@/components/wizard/ModeSelect'
 import { UploadScreen }     from '@/components/wizard/UploadScreen'
@@ -42,10 +42,22 @@ export default function App() {
   const [state, setState] = useState<WizardState>(INITIAL_STATE)
 
   const update = (patch: Partial<WizardState>) =>
-    setState(prev => ({ ...prev, ...patch }))
+    setState((prev: WizardState) => ({ ...prev, ...patch }))
 
-  const reset = () => {
-    setState(INITIAL_STATE)
+  const reset = () => setState(INITIAL_STATE)
+
+  const handleAddAnotherShape = () => {
+    const completed: CompletedShape = {
+      shapeName:   state.shapeName,
+      targetType:  state.targetType as CompletedShape['targetType'],
+      targetValue: state.targetValue,
+      properties:  state.properties,
+    }
+    setState({
+      ...INITIAL_STATE,
+      mode:            state.mode,
+      completedShapes: [...state.completedShapes, completed],
+    })
   }
 
   // ── Mode selection ──────────────────────────────────────────────────────────
@@ -111,12 +123,20 @@ export default function App() {
         {/* Step content */}
         <div className="fade-up">
           {state.step === 0 && <Step1Target state={state} update={update} />}
-          {state.step === 1 && <Step2Shape  state={state} update={update} />}
+          {state.step === 1 && <Step2Shape state={state} update={update} completedShapes={state.completedShapes} />}
           {state.step === 2 && (
             <Step3Properties state={state} update={update} />
           )}
           {state.step === 3 && <Step4Constraints state={state} update={update} />}
-          {state.step === 4 && <Step5Output state={state} update={update} onReset={reset} />}
+          {state.step === 4 && (
+            <Step5Output
+              state={state}
+              update={update}
+              onReset={reset}
+              completedShapes={state.completedShapes}
+              onAddAnotherShape={handleAddAnotherShape}
+            />
+          )}
         </div>
 
         {/* Navigation bar */}
@@ -137,12 +157,20 @@ export default function App() {
               {state.step === 3 ? 'Generate output →' : 'Continue →'}
             </button>
           ) : (
-            <button
-              onClick={reset}
-              className="text-sm px-4 py-2 rounded border border-zinc-200 text-zinc-500 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-colors"
-            >
-              Start over
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAddAnotherShape}
+                className="text-sm px-4 py-2 rounded border border-zinc-300 text-zinc-600 hover:bg-zinc-50 transition-colors"
+              >
+                + Add another shape
+              </button>
+              <button
+                onClick={reset}
+                className="text-sm px-4 py-2 rounded border border-zinc-200 text-zinc-500 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-colors"
+              >
+                Start over
+              </button>
+            </div>
           )}
         </div>
       </WizardCard>

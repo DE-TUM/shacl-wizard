@@ -1,13 +1,54 @@
 import { useState } from 'react'
 import { parseNaturalLanguage } from '@/api/backend'
-import type { WizardState } from '@/types'
+import type { WizardState, PropertyShape, PropertyConstraints, CompletedShape } from '@/types'
 
 interface Props {
-  state:  WizardState
-  update: (patch: Partial<WizardState>) => void
+  state:           WizardState
+  update:          (patch: Partial<WizardState>) => void
+  completedShapes: CompletedShape[]
 }
 
-export function Step2Shape({ state, update }: Props) {
+function uid() {
+  return Math.random().toString(36).slice(2, 8)
+}
+
+function mergeWithUpload(
+  aiProps: PropertyShape[],
+  upload: Record<string, Partial<PropertyConstraints>>,
+): PropertyShape[] {
+  const merged = aiProps.map(prop => {
+    const up = upload[prop.path]
+    if (!up) return prop
+
+    const ai = prop.constraints
+    const result: PropertyConstraints = { ...ai }
+
+    if (up.nodeKind === 'sh:IRI') {
+      // Upload observed IRI values — trust it; a property can't also have a literal datatype
+      result.nodeKind = 'sh:IRI'
+      delete result.datatype
+    } else if (up.datatype) {
+      // Upload inferred a concrete XSD type from real literal values — keep it
+      result.datatype = up.datatype
+    }
+
+    return { ...prop, constraints: result }
+  })
+
+  // Preserve upload-found properties that AI didn't mention
+  const aiPaths = new Set(aiProps.map(p => p.path))
+  for (const [path, constraints] of Object.entries(upload)) {
+    if (!aiPaths.has(path)) {
+      merged.push({ id: uid(), path, constraints: constraints as PropertyConstraints })
+    }
+  }
+
+  return merged
+}
+
+export function Step2Shape({ state, update, completedShapes }: Props) {
+  const isDuplicateName = state.shapeName.trim().length > 0 &&
+    completedShapes.some(s => s.shapeName === state.shapeName.trim())
   const [parsing, setParsing] = useState(false)
 
   const handleParse = async () => {
@@ -15,7 +56,11 @@ export function Step2Shape({ state, update }: Props) {
     setParsing(true)
     try {
       const result = await parseNaturalLanguage(state)
-      update({ properties: result.properties, nlParsed: true })
+      const properties =
+        Object.keys(state.suggestedConstraints).length > 0
+          ? mergeWithUpload(result.properties, state.suggestedConstraints)
+          : result.properties
+      update({ properties, nlParsed: true })
     } catch (err) {
       console.error('NL parse failed:', err)
     } finally {
@@ -57,9 +102,14 @@ export function Step2Shape({ state, update }: Props) {
             </div>
           )}
         </div>
-        {state.shapeName && (
+        {state.shapeName && !isDuplicateName && (
           <p className="text-[11px] text-zinc-400 mono">
             → ex:{state.shapeName} a sh:NodeShape .
+          </p>
+        )}
+        {isDuplicateName && (
+          <p className="text-[11px] text-red-500 mono">
+            ex:{state.shapeName} is already defined in this graph
           </p>
         )}
         <p className="text-[11px] text-zinc-400">

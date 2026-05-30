@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anyio
+import functools
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,7 +15,7 @@ from app.models import (
     WizardState,
 )
 from app.services.llm_parser import parse_natural_language
-from app.services.rdf_parser import guess_rdf_format, parse_rdf_hints
+from app.services.rdf_parser import guess_rdf_format, parse_rdf_full
 from app.services.shapes import build_shapes_response
 from app.services.validator import run_pyshacl_validation
 
@@ -79,7 +80,8 @@ async def parse_rdf(
         text = _decode_bytes(await data_file.read(), filename)
 
     try:
-        return await anyio.to_thread.run_sync(parse_rdf_hints, text or "", filename, rdf_format)
+        fn = functools.partial(parse_rdf_full, text or "", filename, rdf_format, settings)
+        return await anyio.to_thread.run_sync(fn)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not parse RDF graph: {exc}") from exc
 

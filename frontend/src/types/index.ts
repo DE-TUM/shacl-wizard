@@ -54,6 +54,13 @@ export interface PropertyShape {
   constraints: PropertyConstraints
 }
 
+export interface CompletedShape {
+  shapeName:   string
+  targetType:  TargetType
+  targetValue: string
+  properties:  PropertyShape[]
+}
+
 // ─── Input mode ───────────────────────────────────────────────────────────────
 
 export type InputMode = '' | 'manual' | 'upload'
@@ -61,35 +68,39 @@ export type InputMode = '' | 'manual' | 'upload'
 // ─── Full wizard state ────────────────────────────────────────────────────────
 
 export interface WizardState {
-  mode:               InputMode
-  step:               number        // 0–4
-  targetType:         TargetType | ''
-  targetValue:        string
-  shapeName:          string
-  properties:         PropertyShape[]
-  nlDescription:      string
-  useNL:              boolean
-  nlParsed:           boolean
-  outputTab:          'turtle' | 'jsonld' | 'rdfxml' | 'trig'
-  uploadedFileName:   string
-  suggestedClasses:   string[]
-  suggestedProperties: string[]
+  mode:                 InputMode
+  step:                 number        // 0–4
+  targetType:           TargetType | ''
+  targetValue:          string
+  shapeName:            string
+  properties:           PropertyShape[]
+  nlDescription:        string
+  useNL:                boolean
+  nlParsed:             boolean
+  outputTab:            'turtle' | 'jsonld' | 'rdfxml' | 'trig'
+  uploadedFileName:     string
+  suggestedClasses:     string[]
+  suggestedProperties:  string[]
+  suggestedConstraints: Record<string, Partial<PropertyConstraints>>
+  completedShapes:      CompletedShape[]
 }
 
 export const INITIAL_STATE: WizardState = {
-  mode:                '',
-  step:                0,
-  targetType:          '',
-  targetValue:         '',
-  shapeName:           '',
-  properties:          [],
-  nlDescription:       '',
-  useNL:               false,
-  nlParsed:            false,
-  outputTab:           'turtle',
-  uploadedFileName:    '',
-  suggestedClasses:    [],
-  suggestedProperties: [],
+  mode:                 '',
+  step:                 0,
+  targetType:           '',
+  targetValue:          '',
+  shapeName:            '',
+  properties:           [],
+  nlDescription:        '',
+  useNL:                false,
+  nlParsed:             false,
+  outputTab:            'turtle',
+  uploadedFileName:     '',
+  suggestedClasses:     [],
+  suggestedProperties:  [],
+  suggestedConstraints: {},
+  completedShapes:      [],
 }
 
 // ─── Datatype options (shown in Step 4 constraint panel) ─────────────────────
@@ -118,8 +129,9 @@ export interface GenerateResponse {
 }
 
 export interface ParseResponse {
-  classes:           string[]
-  properties:        string[]
-  prefixes:          Record<string, string>
-  detectedDatatypes: Record<string, string>
+  classes:              string[]
+  properties:           string[]
+  prefixes:             Record<string, string>
+  detectedDatatypes:    Record<string, string>
+  suggestedConstraints?: Record<string, Partial<PropertyConstraints>>
 }

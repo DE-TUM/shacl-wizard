@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { CodeBlock } from './CodeBlock'
 import { generateShapes, validateGraph } from '@/api/backend'
 import { buildTurtle, buildJsonLd, buildRdfXml, buildTrig } from '@/utils/outputBuilder'
-import type { WizardState } from '@/types'
+import type { WizardState, CompletedShape } from '@/types'
 import type { ValidationResult } from '@/api/backend'
 
 interface Props {
-  state:   WizardState
-  update:  (patch: Partial<WizardState>) => void
-  onReset: () => void  // kept for API compatibility
+  state:               WizardState
+  update:              (patch: Partial<WizardState>) => void
+  onReset:             () => void
+  completedShapes:     CompletedShape[]
+  onAddAnotherShape:   () => void
 }
 
 const TABS = [
@@ -18,55 +20,52 @@ const TABS = [
   { id: 'trig',   label: 'TriG',    ext: 'trig'  },
 ] as const
 
-// ─── Validation result types ──────────────────────────────────────────────────
-
 type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid' | 'error'
-type GenerationStatus = 'generating' | 'ready' | 'fallback'
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export function Step5Output({ state, update }: Props) {
+export function Step5Output({ state, update, completedShapes }: Props) {
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
-  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('generating')
-  const [generatedFormats, setGeneratedFormats] = useState<Record<WizardState['outputTab'], string> | null>(null)
-  const [generationError, setGenerationError] = useState('')
+
+  // Generation state
+  const [generating, setGenerating]           = useState(true)
+  const [generateError, setGenerateError]     = useState(false)
+  const [generatedFormats, setGeneratedFormats] = useState<Record<string, string> | null>(null)
+
   const fileRef = useRef<HTMLInputElement>(null)
 
   const fallbackBuilds: Record<WizardState['outputTab'], string> = {
-    turtle: buildTurtle(state),
-    jsonld: buildJsonLd(state),
-    rdfxml: buildRdfXml(state),
-    trig:   buildTrig(state),
+    turtle: buildTurtle(state, completedShapes),
+    jsonld: buildJsonLd(state, completedShapes),
+    rdfxml: buildRdfXml(state, completedShapes),
+    trig:   buildTrig(state, completedShapes),
   }
 
   const activeTab = TABS.find(t => t.id === state.outputTab) ?? TABS[0]
-  const builds = generatedFormats ?? fallbackBuilds
-  const code = builds[activeTab.id]
+  const builds    = generatedFormats ?? fallbackBuilds
+  const code      = builds[activeTab.id]
 
+  // Only re-generate when actual shape data changes, not on UI-only changes like tab switches.
   useEffect(() => {
     let alive = true
-
-    setGenerationStatus('generating')
-    setGenerationError('')
+    setGenerating(true)
+    setGenerateError(false)
 
     generateShapes(state)
-      .then(result => {
+      .then((result: { formats: Record<string, string> }) => {
         if (!alive) return
         setGeneratedFormats(result.formats)
-        setGenerationStatus('ready')
+        setGenerating(false)
       })
-      .catch(error => {
+      .catch(() => {
         if (!alive) return
         setGeneratedFormats(null)
-        setGenerationStatus('fallback')
-        setGenerationError(error instanceof Error ? error.message : 'Backend generation failed.')
+        setGenerateError(true)
+        setGenerating(false)
       })
 
-    return () => {
-      alive = false
-    }
-  }, [state])
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.shapeName, state.targetType, state.targetValue, state.properties, state.completedShapes])
 
   const handleDownload = () => {
     const blob = new Blob([code], { type: 'text/plain' })
@@ -113,6 +112,24 @@ export function Step5Output({ state, update }: Props) {
         ))}
       </div>
 
+      {/* Completed shapes summary */}
+      {completedShapes.length > 0 && (
+        <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 space-y-1">
+          {completedShapes.map(s => {
+            const targetPred =
+              s.targetType === 'class'      ? 'sh:targetClass' :
+              s.targetType === 'node'       ? 'sh:targetNode' :
+              s.targetType === 'subjectsOf' ? 'sh:targetSubjectsOf' :
+                                              'sh:targetObjectsOf'
+            return (
+              <p key={s.shapeName} className="text-[11px] text-zinc-500 mono">
+                ex:{s.shapeName} → {targetPred} ex:{s.targetValue} · {s.properties.length} propert{s.properties.length === 1 ? 'y' : 'ies'}
+              </p>
+            )
+          })}
+        </div>
+      )}
+
       {/* Format tabs */}
       <div className="flex gap-1 bg-zinc-100 p-1 rounded-lg">
         {TABS.map(tab => (
@@ -130,24 +147,34 @@ export function Step5Output({ state, update }: Props) {
         ))}
       </div>
 
-      <CodeBlock code={code} lang={activeTab.label} />
+      {/* Code area — loading dots while backend is generating */}
+      {generating ? (
+        <div className="bg-zinc-950 rounded-xl flex justify-center items-center min-h-[140px]">
+          <span className="flex gap-1.5">
+            {[0, 1, 2].map(i => (
+              <span
+                key={i}
+                className="w-2 h-2 rounded-full bg-zinc-600 pulse-dot inline-block"
+                style={{ animationDelay: `${i * 0.2}s` }}
+              />
+            ))}
+          </span>
+        </div>
+      ) : (
+        <CodeBlock code={code} lang={activeTab.label} />
+      )}
 
-      {generationStatus === 'generating' && (
-        <p className="text-xs text-zinc-400">Generating output with the backend...</p>
-      )}
-      {generationStatus === 'ready' && (
-        <p className="text-xs text-emerald-600">Backend output is active.</p>
-      )}
-      {generationStatus === 'fallback' && (
-        <p className="text-xs text-amber-600">
-          Backend output unavailable. Showing local preview{generationError ? `: ${generationError}` : '.'}
+      {!generating && generateError && (
+        <p className="text-xs text-zinc-400">
+          Backend unavailable — showing client-side preview
         </p>
       )}
 
       {/* Download button */}
       <button
         onClick={handleDownload}
-        className="w-full h-9 rounded-md border border-zinc-200 text-zinc-700 text-sm hover:bg-zinc-50 transition-colors"
+        disabled={generating}
+        className="w-full h-9 rounded-md border border-zinc-200 text-zinc-700 text-sm hover:bg-zinc-50 disabled:opacity-40 transition-colors"
       >
         Download .{activeTab.ext}
       </button>
@@ -188,7 +215,6 @@ export function Step5Output({ state, update }: Props) {
             />
           </div>
         ) : validationStatus === 'validating' ? (
-          /* Loading state */
           <div className="border-2 border-dashed border-zinc-200 rounded-xl p-6 text-center">
             <div className="flex justify-center gap-1.5 mb-3">
               {[0, 1, 2].map(i => (
@@ -203,7 +229,6 @@ export function Step5Output({ state, update }: Props) {
             <p className="text-xs text-zinc-400 mono mt-1">{validationResult?.dataFile ?? ''}</p>
           </div>
         ) : validationResult?.status === 'valid' ? (
-          /* All valid */
           <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-5 space-y-2">
             <div className="flex items-center gap-2">
               <span className="text-emerald-600 text-lg">✓</span>
@@ -221,7 +246,6 @@ export function Step5Output({ state, update }: Props) {
             </button>
           </div>
         ) : (
-          /* Violations */
           <div className="rounded-xl border-2 border-red-200 bg-red-50 p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -239,7 +263,7 @@ export function Step5Output({ state, update }: Props) {
             </div>
 
             <div className="space-y-2">
-              {validationResult!.violations.map((v, i) => (
+              {validationResult!.violations.map((v: ValidationResult['violations'][number], i: number) => (
                 <div key={i} className="bg-white rounded-lg p-3 border border-red-100 space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="mono text-[11px] text-red-600 font-medium">{v.focusNode}</span>

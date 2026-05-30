@@ -61,6 +61,18 @@ class PropertyShape(CamelModel):
         return value
 
 
+class CompletedShape(CamelModel):
+    shape_name: str = Field(alias="shapeName")
+    target_type: TargetType | None = Field(default=None, alias="targetType")
+    target_value: str = Field(default="", alias="targetValue")
+    properties: list[PropertyShape] = Field(default_factory=list)
+
+    @field_validator("target_type", mode="before")
+    @classmethod
+    def normalize_target_type(cls, value: object) -> object:
+        return empty_string_to_none(value)
+
+
 class WizardState(CamelModel):
     mode: str | None = None
     step: int | None = None
@@ -75,6 +87,7 @@ class WizardState(CamelModel):
     uploaded_file_name: str = Field(default="", alias="uploadedFileName")
     suggested_classes: list[str] = Field(default_factory=list, alias="suggestedClasses")
     suggested_properties: list[str] = Field(default_factory=list, alias="suggestedProperties")
+    completed_shapes: list[CompletedShape] = Field(default_factory=list, alias="completedShapes")
 
     @field_validator("target_type", mode="before")
     @classmethod
@@ -112,6 +125,10 @@ class ParseRDFResponse(CamelModel):
     properties: list[str]
     prefixes: dict[str, str]
     detected_datatypes: dict[str, str] = Field(alias="detectedDatatypes")
+    suggested_constraints: dict[str, dict] = Field(
+        default_factory=dict, alias="suggestedConstraints"
+    )
+    inference_limited: bool = Field(default=False, alias="inferenceLimited")
 
 
 class Violation(CamelModel):

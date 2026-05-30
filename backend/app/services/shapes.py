@@ -7,15 +7,16 @@ from rdflib import BNode, Dataset, Graph, Literal, Namespace, URIRef
 from rdflib.collection import Collection
 from rdflib.namespace import OWL, RDF, RDFS, SH, XSD
 
-from app.models import PropertyConstraints, WizardState
+from app.models import CompletedShape, PropertyConstraints, PropertyShape, WizardState
 
 
 def build_shapes_response(state: WizardState, base_uri: str) -> tuple[dict[str, str], str, list[str]]:
     graph, shape_uri = build_shapes_graph(state, base_uri)
     formats = serialize_shapes_graph(graph, base_uri)
+    total = 1 + len(state.completed_shapes)
     summary = [
-        f"Generated NodeShape {shape_uri}.",
-        f"Added {len(state.properties)} propert{'y' if len(state.properties) == 1 else 'ies'}.",
+        f"Generated {total} NodeShape{'s' if total > 1 else ''}: {shape_uri}.",
+        f"Added {len(state.properties)} propert{'y' if len(state.properties) == 1 else 'ies'} to {state.shape_name}.",
         "Produced Turtle, JSON-LD, RDF/XML, and TriG serializations.",
     ]
     return formats, shape_uri, summary
@@ -28,19 +29,38 @@ def build_shapes_graph(state: WizardState, base_uri: str) -> tuple[Graph, str]:
     graph = Graph()
     _bind_namespaces(graph, base_uri)
 
-    shape = _resource(state.shape_name, base_uri)
+    for cs in state.completed_shapes:
+        _add_shape_to_graph(
+            graph, cs.shape_name, cs.target_type, cs.target_value, cs.properties, base_uri
+        )
+
+    shape_uri = _add_shape_to_graph(
+        graph, state.shape_name, state.target_type, state.target_value, state.properties, base_uri
+    )
+    return graph, str(shape_uri)
+
+
+def _add_shape_to_graph(
+    graph: Graph,
+    shape_name: str,
+    target_type: str | None,
+    target_value: str,
+    properties: list[PropertyShape],
+    base_uri: str,
+) -> URIRef:
+    shape = _resource(shape_name, base_uri)
     graph.add((shape, RDF.type, SH.NodeShape))
 
-    if state.target_type and state.target_value.strip():
+    if target_type and target_value.strip():
         target_predicate = {
             "class": SH.targetClass,
             "node": SH.targetNode,
             "subjectsOf": SH.targetSubjectsOf,
             "objectsOf": SH.targetObjectsOf,
-        }[state.target_type]
-        graph.add((shape, target_predicate, _resource(state.target_value, base_uri)))
+        }.get(target_type, SH.targetClass)
+        graph.add((shape, target_predicate, _resource(target_value, base_uri)))
 
-    for prop in state.properties:
+    for prop in properties:
         if not prop.path.strip():
             continue
         prop_node = BNode()
@@ -49,7 +69,7 @@ def build_shapes_graph(state: WizardState, base_uri: str) -> tuple[Graph, str]:
         graph.add((prop_node, SH.path, _resource(prop.path, base_uri)))
         _add_constraints(graph, prop_node, prop.constraints, base_uri)
 
-    return graph, str(shape)
+    return shape
 
 
 def serialize_shapes_graph(graph: Graph, base_uri: str) -> dict[str, str]:

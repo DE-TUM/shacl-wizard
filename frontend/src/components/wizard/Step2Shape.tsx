@@ -12,33 +12,56 @@ function uid() {
   return Math.random().toString(36).slice(2, 8)
 }
 
+function mergeConstraints(
+  ai: PropertyConstraints,
+  up: Partial<PropertyConstraints>,
+): PropertyConstraints {
+  const result: PropertyConstraints = { ...ai }
+
+  // nodeKind: upload wins (upload observed real IRI values in the file)
+  if (up.nodeKind) {
+    result.nodeKind = up.nodeKind
+    if (up.nodeKind === 'sh:IRI') delete result.datatype
+  }
+
+  // datatype: upload wins only when it found a concrete XSD type and AI didn't set one
+  if (up.datatype && !ai.datatype) {
+    result.datatype = up.datatype
+  }
+
+  // Everything else follows AI-wins rules (in, range bounds, minCount, maxCount, pattern):
+  // They are already in `result` from the `{ ...ai }` spread.
+  // No upload fields override them.
+
+  return result
+}
+
 function mergeWithUpload(
   aiProps: PropertyShape[],
   upload: Record<string, Partial<PropertyConstraints>>,
 ): PropertyShape[] {
-  const merged = aiProps.map(prop => {
-    const up = upload[prop.path]
-    if (!up) return prop
-
-    const ai = prop.constraints
-    const result: PropertyConstraints = { ...ai }
-
-    if (up.nodeKind === 'sh:IRI') {
-      // Upload observed IRI values — trust it; a property can't also have a literal datatype
-      result.nodeKind = 'sh:IRI'
-      delete result.datatype
-    } else if (up.datatype) {
-      // Upload inferred a concrete XSD type from real literal values — keep it
-      result.datatype = up.datatype
-    }
-
-    return { ...prop, constraints: result }
-  })
-
-  // Preserve upload-found properties that AI didn't mention
-  const aiPaths = new Set(aiProps.map(p => p.path))
+  // Build a case-insensitive index of upload entries
+  const uploadIndex = new Map<string, [string, Partial<PropertyConstraints>]>()
   for (const [path, constraints] of Object.entries(upload)) {
-    if (!aiPaths.has(path)) {
+    uploadIndex.set(path.toLowerCase(), [path, constraints])
+  }
+
+  // Start with AI properties, merging upload data where paths overlap
+  const merged: PropertyShape[] = []
+  const aiLowerPaths = new Set<string>()
+  for (const aiProp of aiProps) {
+    const key = aiProp.path.toLowerCase()
+    aiLowerPaths.add(key)
+    const upEntry = uploadIndex.get(key)
+    merged.push({
+      ...aiProp,
+      constraints: upEntry ? mergeConstraints(aiProp.constraints, upEntry[1]) : aiProp.constraints,
+    })
+  }
+
+  // Append upload-only properties that AI didn't mention
+  for (const [path, constraints] of Object.entries(upload)) {
+    if (!aiLowerPaths.has(path.toLowerCase())) {
       merged.push({ id: uid(), path, constraints: constraints as PropertyConstraints })
     }
   }
@@ -152,7 +175,7 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
               value={state.nlDescription}
               onChange={e => update({ nlDescription: e.target.value, nlParsed: false })}
               placeholder="Describe what your data must look like. e.g. A Person must have exactly one name, at least one email address, and an optional age between 0 and 150."
-              className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-zinc-200 resize-none
+              className="w-full min-h-[100px] max-h-[400px] px-3 py-2 text-sm rounded-md border border-zinc-200 resize-y
                 focus:outline-none focus:border-zinc-400 bg-white"
             />
             <button

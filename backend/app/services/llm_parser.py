@@ -64,10 +64,28 @@ minExclusive, maxExclusive, minLength, maxLength, in, class, languageIn.
 Prefer common SHACL/XSD CURIEs such as xsd:string, xsd:integer, xsd:decimal,
 xsd:date, xsd:boolean, xsd:anyURI, sh:IRI, sh:Literal, and sh:BlankNode.
 
+For nodeKind: default to sh:IRI when a property references another entity or
+resource. Only use sh:BlankNode if the user explicitly describes an anonymous,
+embedded, or structureless value with no separate identity. In most cases,
+resource references are IRIs.
+
 Never set both minInclusive and minExclusive at the same time, and never set
 both maxInclusive and maxExclusive at the same time. When a user says "between
 X and Y", use only minInclusive and maxInclusive. Only use exclusive bounds if
 the user explicitly says "more than" or "less than" (strictly).
+
+Cardinality rules — you MUST follow these precisely:
+- If the description says "must have", "exactly one", "required", or implies a
+  single mandatory value per entity (e.g. "the X must be"), set BOTH minCount
+  AND maxCount to "1". Never leave maxCount null when minCount is "1" and the
+  description implies a single value.
+- If the description says "at least one" or "required" but can have more than
+  one value, set minCount to "1" and leave maxCount null.
+- If the description says "optional" or "can have multiple", leave both null.
+- Do NOT leave minCount and maxCount null for properties the description treats
+  as singular and mandatory. When in doubt and the property has a datatype that
+  typically holds one value (integer, string, date), set BOTH minCount and
+  maxCount to "1".
 """.strip()
 
 
@@ -191,6 +209,10 @@ def _normalize_constraints(raw: dict) -> dict:
         result["minExclusive"] = None
     if result.get("maxInclusive"):
         result["maxExclusive"] = None
+    # If LLM set minCount "1" but left maxCount null on a scalar property (has a
+    # datatype), the description almost certainly implied a single value — enforce it.
+    if result.get("minCount") == "1" and not result.get("maxCount") and result.get("datatype"):
+        result["maxCount"] = "1"
     return result
 
 

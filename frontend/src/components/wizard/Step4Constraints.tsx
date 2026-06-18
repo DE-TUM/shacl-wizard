@@ -66,11 +66,14 @@ export function Step4Constraints({ state, update }: Props) {
             `}
           >
             {prop.path}
-            {Object.keys(prop.constraints).length > 0 && (
-              <span className="ml-1.5 opacity-60">
-                {Object.keys(prop.constraints).length}×
-              </span>
-            )}
+            {(() => {
+              const count = Object.values(prop.constraints).filter(
+                v => v !== null && v !== undefined && v !== ''
+              ).length
+              return count > 0 ? (
+                <span className="ml-1.5 opacity-60">{count}×</span>
+              ) : null
+            })()}
           </button>
         ))}
       </div>

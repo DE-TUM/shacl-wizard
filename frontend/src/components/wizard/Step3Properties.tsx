@@ -29,22 +29,32 @@ export function Step3Properties({ state, update }: Props) {
 
   // Pills that haven't been added yet — reappear automatically when a property is removed
   const availablePills = pillSuggestions.filter(
-    s => !state.properties.find(p => p.path === s)
+    s => !state.properties.find(p => p.path.toLowerCase() === s.toLowerCase())
   )
 
   const showOverlay = input === '' && !state.nlParsed && (loadingPills || availablePills.length > 0)
 
   const uploadSuggestions = state.suggestedProperties.filter(
-    p => !state.properties.find(prop => prop.path === p)
+    p => !state.properties.find(prop => prop.path.toLowerCase() === p.toLowerCase())
   )
 
   const addProperty = (path?: string) => {
     const p = (path ?? input).trim()
     if (!p || p.toLowerCase() === state.targetValue.toLowerCase()) return
+    if (state.properties.some(prop => prop.path.toLowerCase() === p.toLowerCase())) return
     const inferred = state.suggestedConstraints?.[p] ?? {}
     const prop: PropertyShape = { id: uid(), path: p, constraints: inferred }
     update({ properties: [...state.properties, prop] })
     setInput('')
+  }
+
+  const addAllSuggestions = () => {
+    // Batch all not-yet-added detected properties into one state update
+    const newProps: PropertyShape[] = uploadSuggestions
+      .filter(p => p.toLowerCase() !== state.targetValue.toLowerCase())
+      .map(p => ({ id: uid(), path: p, constraints: state.suggestedConstraints?.[p] ?? {} }))
+    if (newProps.length === 0) return
+    update({ properties: [...state.properties, ...newProps] })
   }
 
   const removeProperty = (id: string) => {
@@ -126,9 +136,19 @@ export function Step3Properties({ state, update }: Props) {
       {/* Upload-mode suggestions */}
       {state.mode === 'upload' && uploadSuggestions.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">
-            Detected in your file:
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">
+              Detected in your file:
+            </p>
+            <button
+              onClick={addAllSuggestions}
+              className="text-[11px] px-2.5 py-1 rounded-full border border-zinc-300
+                text-zinc-600 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700
+                transition-colors mono shrink-0"
+            >
+              + Add all ({uploadSuggestions.length})
+            </button>
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {uploadSuggestions.map(s => (
               <button
@@ -171,11 +191,16 @@ export function Step3Properties({ state, update }: Props) {
                       ex:{prop.path}
                     </span>
                   )}
-                  {Object.keys(prop.constraints).length > 0 && (
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
-                      {Object.keys(prop.constraints).length} rules
-                    </span>
-                  )}
+                  {(() => {
+                    const count = Object.values(prop.constraints).filter(
+                      v => v !== null && v !== undefined && v !== ''
+                    ).length
+                    return count > 0 ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
+                        {count} rules
+                      </span>
+                    ) : null
+                  })()}
                 </div>
               </div>
               <div className="flex items-center gap-1 ml-2 shrink-0">

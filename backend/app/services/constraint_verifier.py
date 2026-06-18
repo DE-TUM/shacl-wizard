@@ -18,7 +18,7 @@ For each property, you may only do the following:
 
 DATATYPE: If the Python-inferred datatype is clearly wrong based on the actual values in the sample (e.g. Python said xsd:integer but values are clearly decimals like 3.14), correct it. If it looks correct or you are unsure, omit the field.
 
-NODEKIND: If Python said sh:IRI but the values in the sample are clearly literals, or vice versa, correct it. If correct or unsure, omit the field.
+NODEKIND: If Python said sh:IRI but the values in the sample are clearly literals, or vice versa, correct it. If correct or unsure, omit the field. Default to sh:IRI for resource references; only use sh:BlankNode if explicitly justified by the data sample (the values are anonymous nodes with no separate identity).
 
 SH:IN: Check whether every value in the Python-inferred sh:in list actually appears in the data sample. If a value is in the list but NOT in the sample, remove it. If a value appears in the sample but is MISSING from the Python list, add it back. Never add values you do not see in the sample. If the list looks correct, omit the field. IMPORTANT: if the number of distinct sh:in values equals the number of subjects visible in the sample for that property, the values are unique per entity (e.g. names, emails, phone numbers, IDs) — always discard sh:in entirely by returning "in": null in this case.
 

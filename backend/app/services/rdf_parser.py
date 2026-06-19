@@ -71,11 +71,27 @@ def parse_rdf_full(
     settings: Any | None = None,
 ) -> ParseRDFResponse:
     resolved_format = rdf_format or guess_rdf_format(filename)
+
+    if settings is not None and getattr(settings, "requires_jena", False) and not settings.jena_configured:
+        raise RuntimeError(
+            "RDF_PARSER_BACKEND=jena requires JENA_SPARQL_ENDPOINT and "
+            "JENA_GRAPH_STORE_ENDPOINT, or JENA_BASE_URL/JENA_DATASET."
+        )
+
+    if settings is not None and getattr(settings, "should_try_jena", False):
+        try:
+            from app.services.jena_parser import parse_rdf_full_with_jena
+            return parse_rdf_full_with_jena(graph_text, filename, resolved_format, settings)
+        except Exception:
+            if getattr(settings, "requires_jena", False):
+                raise
+
     graph: Graph | Dataset = Dataset(default_union=True) if resolved_format == "trig" else Graph()
     graph.parse(data=graph_text, format=resolved_format)
 
     response = extract_rdf_hints(graph)
-    inferred, limited = infer_constraints(graph, response.properties)
+    inference_limit = getattr(settings, "rdf_inference_limit_triples", 10_000)
+    inferred, limited = infer_constraints(graph, response.properties, inference_limit)
     response.inference_limited = limited
 
     if not limited and settings is not None and (settings.should_try_groq or settings.should_try_gemini):
@@ -140,9 +156,13 @@ def _looks_like_unique_identifiers(values: list[str]) -> bool:
     return False
 
 
-def infer_constraints(g: Graph | Dataset, properties: list[str]) -> tuple[dict[str, dict], bool]:
+def infer_constraints(
+    g: Graph | Dataset,
+    properties: list[str],
+    inference_limit_triples: int = 10_000,
+) -> tuple[dict[str, dict], bool]:
     triple_count = sum(1 for _ in g)
-    limited = triple_count > 10_000
+    limited = triple_count > inference_limit_triples
 
     prop_set = set(properties)
 

@@ -47,6 +47,9 @@ def health() -> dict[str, str | bool]:
         "groqModel": settings.groq_model,
         "geminiConfigured": bool(settings.gemini_api_key),
         "geminiModel": settings.gemini_model,
+        "rdfParserBackend": settings.rdf_parser_backend,
+        "jenaConfigured": settings.jena_configured,
+        "jenaSparqlEndpoint": settings.jena_sparql_endpoint or "",
     }
 
 

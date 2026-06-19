@@ -21,6 +21,44 @@ def _llm_provider(value: str) -> str:
     return provider if provider in {"auto", "groq", "gemini", "heuristic"} else "auto"
 
 
+def _rdf_parser_backend(value: str) -> str:
+    backend = value.strip().lower()
+    return backend if backend in {"auto", "rdflib", "jena"} else "auto"
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _jena_endpoints() -> tuple[str | None, str | None]:
+    sparql_endpoint = os.getenv("JENA_SPARQL_ENDPOINT") or None
+    graph_store_endpoint = os.getenv("JENA_GRAPH_STORE_ENDPOINT") or None
+    if sparql_endpoint and graph_store_endpoint:
+        return sparql_endpoint, graph_store_endpoint
+
+    base_url = os.getenv("JENA_BASE_URL") or None
+    fuseki_command = os.getenv("JENA_FUSEKI_COMMAND") or None
+    if not base_url and not fuseki_command:
+        return sparql_endpoint, graph_store_endpoint
+
+    base = (base_url or "http://127.0.0.1:3030").rstrip("/")
+    dataset = os.getenv("JENA_DATASET", "shacl-wizard").strip("/")
+    return (
+        sparql_endpoint or f"{base}/{dataset}/sparql",
+        graph_store_endpoint or f"{base}/{dataset}/data",
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str
@@ -31,6 +69,13 @@ class Settings:
     groq_model: str
     gemini_api_key: str | None
     gemini_model: str
+    rdf_parser_backend: str
+    rdf_inference_limit_triples: int
+    jena_sparql_endpoint: str | None
+    jena_graph_store_endpoint: str | None
+    jena_fuseki_command: str | None
+    jena_startup_timeout_seconds: float
+    jena_request_timeout_seconds: float
 
     @property
     def should_try_groq(self) -> bool:
@@ -50,8 +95,22 @@ class Settings:
     def requires_gemini(self) -> bool:
         return self.llm_provider.lower() == "gemini"
 
+    @property
+    def jena_configured(self) -> bool:
+        return bool(self.jena_sparql_endpoint and self.jena_graph_store_endpoint)
+
+    @property
+    def should_try_jena(self) -> bool:
+        return self.rdf_parser_backend in {"auto", "jena"} and self.jena_configured
+
+    @property
+    def requires_jena(self) -> bool:
+        return self.rdf_parser_backend == "jena"
+
 
 def get_settings() -> Settings:
+    jena_sparql_endpoint, jena_graph_store_endpoint = _jena_endpoints()
+
     return Settings(
         app_name=os.getenv("APP_NAME", "SHACL Wizard Backend"),
         base_uri=os.getenv("BASE_URI", "http://example.org/"),
@@ -66,4 +125,11 @@ def get_settings() -> Settings:
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        rdf_parser_backend=_rdf_parser_backend(os.getenv("RDF_PARSER_BACKEND", "auto")),
+        rdf_inference_limit_triples=_int_env("RDF_INFERENCE_LIMIT_TRIPLES", 10_000),
+        jena_sparql_endpoint=jena_sparql_endpoint,
+        jena_graph_store_endpoint=jena_graph_store_endpoint,
+        jena_fuseki_command=os.getenv("JENA_FUSEKI_COMMAND") or None,
+        jena_startup_timeout_seconds=_float_env("JENA_STARTUP_TIMEOUT_SECONDS", 10.0),
+        jena_request_timeout_seconds=_float_env("JENA_REQUEST_TIMEOUT_SECONDS", 30.0),
     )

@@ -86,6 +86,65 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
+### Apache Jena / Fuseki (optional)
+
+The backend can use Apache Jena Fuseki for RDF upload parsing and large-graph inference. This is optional; if Jena is not configured, the app falls back to `rdflib` when `RDF_PARSER_BACKEND=auto`.
+
+#### Installation
+
+1. Download Apache Jena Fuseki 6.x from https://jena.apache.org/download/index.cgi
+2. Extract the archive.
+3. Make the `fuseki-server` script executable if needed:
+
+```bash
+chmod +x /path/to/apache-jena-fuseki-6.1.0/fuseki-server
+```
+
+#### Start a local Fuseki dataset
+
+```bash
+cd /path/to/apache-jena-fuseki-6.1.0
+./fuseki-server --mem /shacl-wizard
+```
+
+By default Fuseki listens on `http://127.0.0.1:3030`.
+
+#### `.env` configuration
+
+The backend reads Jena settings from `backend/.env`.
+
+Option A: use base URL + dataset
+
+```env
+RDF_PARSER_BACKEND=auto
+JENA_BASE_URL=http://127.0.0.1:3030
+JENA_DATASET=shacl-wizard
+```
+
+Option B: set explicit endpoints
+
+```env
+RDF_PARSER_BACKEND=auto
+JENA_SPARQL_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/sparql
+JENA_GRAPH_STORE_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/data
+```
+
+Option C: let the backend start Fuseki automatically
+
+```env
+RDF_PARSER_BACKEND=auto
+JENA_FUSEKI_COMMAND=/Users/<user>/Downloads/apache-jena-fuseki-6.1.0/fuseki-server --mem /shacl-wizard
+JENA_DATASET=shacl-wizard
+JENA_STARTUP_TIMEOUT_SECONDS=10
+JENA_REQUEST_TIMEOUT_SECONDS=30
+```
+
+`RDF_PARSER_BACKEND` values:
+
+- `auto` — try Jena when configured, otherwise fall back to `rdflib`
+- `rdflib` — always use in-process RDFLib
+- `jena` — require Jena configuration and fail if Jena is unavailable
+
 ### Frontend
 
 ```bash

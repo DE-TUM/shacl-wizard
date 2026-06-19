@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { parseNaturalLanguage } from '@/api/backend'
 import type { WizardState, PropertyShape, PropertyConstraints, CompletedShape } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   state:           WizardState
@@ -94,7 +95,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Give your shape a name.</h2>
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+          Give your shape a name.
+          <InfoTip align="left">
+            A NodeShape is a named bundle of validation rules. The name lets you
+            reference and reuse that bundle in your shapes graph.
+          </InfoTip>
+        </h2>
         <p className="text-sm text-zinc-500 mt-1">
           This becomes the identifier for the NodeShape in the output file.
         </p>
@@ -102,6 +109,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
 
       {/* Shape name input */}
       <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
+          Shape name
+          <InfoTip align="left">
+            This is not the class itself. It is the rule set that checks nodes from
+            the class or target you chose.
+          </InfoTip>
+        </label>
         <div className="relative">
           <input
             autoFocus
@@ -147,7 +161,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
       <div className="border border-dashed border-zinc-200 rounded-xl p-4 bg-zinc-50/60 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold text-zinc-800">AI-assisted input</span>
+            <span className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+              AI-assisted input
+              <InfoTip align="left">
+                Describe the intended rules in ordinary language. The result is a
+                draft list of SHACL properties and constraints for you to review.
+              </InfoTip>
+            </span>
             <p className="text-xs text-zinc-500 mt-0.5">
               Describe your data in plain English — AI will suggest properties and constraints.
             </p>
@@ -171,6 +191,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
 
         {state.useNL && (
           <div className="space-y-2 fade-up">
+            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+              Plain-English constraints
+              <InfoTip align="left">
+                Mention required fields, optional fields, value types, ranges,
+                formats, and fixed lists. You can edit every suggestion later.
+              </InfoTip>
+            </p>
             <textarea
               value={state.nlDescription}
               onChange={e => update({ nlDescription: e.target.value, nlParsed: false })}

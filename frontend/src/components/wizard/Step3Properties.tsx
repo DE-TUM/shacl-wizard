@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
 import { suggestProperties } from '@/api/backend'
+import { InfoTip } from './InfoTip'
 
 function uid() {
   return Math.random().toString(36).slice(2, 8)
@@ -74,8 +75,12 @@ export function Step3Properties({ state, update }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
           Which properties do you want to constrain?
+          <InfoTip align="left">
+            In SHACL, each property shape checks one predicate on the target node,
+            such as ex:name, ex:email, or ex:birthDate.
+          </InfoTip>
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
           Add the predicates you want to validate on{' '}
@@ -84,61 +89,74 @@ export function Step3Properties({ state, update }: Props) {
       </div>
 
       {/* Input with floating pill overlay */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addProperty()}
-            className="w-full h-9 px-3 rounded-md border border-zinc-200 text-sm mono
-              focus:outline-none focus:border-zinc-400"
-          />
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
+          Property path
+          <InfoTip align="left">
+            A property path points from the node being validated to the value being
+            checked. For a simple path, enter the predicate name, such as email.
+          </InfoTip>
+        </label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addProperty()}
+              className="w-full h-9 px-3 rounded-md border border-zinc-200 text-sm mono
+                focus:outline-none focus:border-zinc-400"
+            />
 
-          {/* Pill overlay — only shown when input is empty */}
-          {showOverlay && (
-            <div className="absolute inset-0 flex items-center px-2 pointer-events-none overflow-hidden rounded-md">
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-                {loadingPills ? (
-                  [0, 1, 2].map(i => (
-                    <span
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-zinc-300 pulse-dot inline-block shrink-0"
-                      style={{ animationDelay: `${i * 0.2}s` }}
-                    />
-                  ))
-                ) : (
-                  availablePills.map(s => (
-                    <button
-                      key={s}
-                      onClick={() => addProperty(s)}
-                      className="pointer-events-auto px-2.5 py-0.5 rounded-full border border-zinc-300
-                        bg-white text-zinc-500 hover:bg-emerald-50 hover:border-emerald-400
-                        hover:text-emerald-700 transition-colors text-[11px] mono shrink-0"
-                    >
-                      {s}
-                    </button>
-                  ))
-                )}
+            {/* Pill overlay — only shown when input is empty */}
+            {showOverlay && (
+              <div className="absolute inset-0 flex items-center px-2 pointer-events-none overflow-hidden rounded-md">
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                  {loadingPills ? (
+                    [0, 1, 2].map(i => (
+                      <span
+                        key={i}
+                        className="w-1.5 h-1.5 rounded-full bg-zinc-300 pulse-dot inline-block shrink-0"
+                        style={{ animationDelay: `${i * 0.2}s` }}
+                      />
+                    ))
+                  ) : (
+                    availablePills.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => addProperty(s)}
+                        className="pointer-events-auto px-2.5 py-0.5 rounded-full border border-zinc-300
+                          bg-white text-zinc-500 hover:bg-emerald-50 hover:border-emerald-400
+                          hover:text-emerald-700 transition-colors text-[11px] mono shrink-0"
+                      >
+                        {s}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        <button
-          onClick={() => addProperty()}
-          className="px-4 h-9 rounded-md bg-zinc-900 text-white text-sm hover:bg-zinc-700 transition-colors shrink-0"
-        >
-          Add
-        </button>
+          <button
+            onClick={() => addProperty()}
+            className="px-4 h-9 rounded-md bg-zinc-900 text-white text-sm hover:bg-zinc-700 transition-colors shrink-0"
+          >
+            Add
+          </button>
+        </div>
       </div>
 
       {/* Upload-mode suggestions */}
       {state.mode === 'upload' && uploadSuggestions.length > 0 && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">
+            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
               Detected in your file:
+              <InfoTip align="left">
+                These predicates appeared in the uploaded RDF data. Add the ones
+                whose values should be checked by the shape.
+              </InfoTip>
             </p>
             <button
               onClick={addAllSuggestions}
@@ -196,8 +214,12 @@ export function Step3Properties({ state, update }: Props) {
                       v => v !== null && v !== undefined && v !== ''
                     ).length
                     return count > 0 ? (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
                         {count} rules
+                        <InfoTip align="right" placement="top">
+                          Rules are SHACL constraints already attached to this
+                          property, such as required count, datatype, or value range.
+                        </InfoTip>
                       </span>
                     ) : null
                   })()}

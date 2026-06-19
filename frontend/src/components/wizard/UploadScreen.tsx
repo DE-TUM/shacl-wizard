@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { parseRdfFile, parseRdfText } from '@/api/backend'
 import type { WizardState } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   update: (patch: Partial<WizardState>) => void
@@ -59,7 +60,13 @@ export function UploadScreen({ update, onBack }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Upload your RDF data graph</h2>
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+          Upload your RDF data graph
+          <InfoTip align="left">
+            A data graph is the RDF file with your actual records. A shapes graph is
+            the separate rules file that checks those records.
+          </InfoTip>
+        </h2>
         <p className="text-sm text-zinc-500 mt-1">
           This is your data file, not a shapes graph. The app will extract classes and properties
           to pre-fill the wizard.
@@ -100,7 +107,13 @@ export function UploadScreen({ update, onBack }: Props) {
       )}
 
       <div className="border-t border-zinc-100 pt-4">
-        <p className="text-xs text-zinc-400 mb-2">Or paste raw Turtle text directly:</p>
+        <p className="text-xs text-zinc-400 mb-2 flex items-center gap-1.5">
+          Or paste raw Turtle text directly:
+          <InfoTip align="left">
+            Turtle is a compact text syntax for RDF triples. Paste example data here
+            and the wizard will look for reusable classes and properties.
+          </InfoTip>
+        </p>
         <textarea
           placeholder={'@prefix ex: <http://example.org/> .\nex:Alice a ex:Person ;\n    ex:name "Alice" .'}
           className="w-full min-h-[100px] px-3 py-2 text-xs mono rounded-md border border-zinc-200 resize-none focus:outline-none focus:border-zinc-400"

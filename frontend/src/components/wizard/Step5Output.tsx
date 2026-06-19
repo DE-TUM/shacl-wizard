@@ -4,6 +4,7 @@ import { generateShapes, validateGraph } from '@/api/backend'
 import { buildTurtle, buildJsonLd, buildRdfXml, buildTrig } from '@/utils/outputBuilder'
 import type { WizardState, CompletedShape } from '@/types'
 import type { ValidationResult } from '@/api/backend'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   state:               WizardState
@@ -92,7 +93,13 @@ export function Step5Output({ state, update, completedShapes }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Your shapes graph is ready.</h2>
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+          Your shapes graph is ready.
+          <InfoTip align="left">
+            A shapes graph is the RDF file containing your SHACL rules. Validators
+            use it to check a separate RDF data graph.
+          </InfoTip>
+        </h2>
         <p className="text-sm text-zinc-500 mt-1">
           Copy or download the output, then validate your data graph below.
         </p>
@@ -101,12 +108,29 @@ export function Step5Output({ state, update, completedShapes }: Props) {
       {/* Summary stats */}
       <div className="grid grid-cols-3 gap-2.5">
         {[
-          { label: 'Shape',      value: state.shapeName || '—' },
-          { label: 'Target',     value: state.targetValue ? `ex:${state.targetValue}` : '—' },
-          { label: 'Properties', value: String(state.properties.length) },
+          {
+            label: 'Shape',
+            value: state.shapeName || '—',
+            info: 'The named NodeShape that groups these validation rules.',
+          },
+          {
+            label: 'Target',
+            value: state.targetValue ? `ex:${state.targetValue}` : '—',
+            info: 'The nodes in the data graph that this shape will validate.',
+          },
+          {
+            label: 'Properties',
+            value: String(state.properties.length),
+            info: 'The predicates that have property-level constraints.',
+          },
         ].map(item => (
           <div key={item.label} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1">{item.label}</div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1 flex items-center gap-1.5">
+              {item.label}
+              <InfoTip align="left" placement="bottom">
+                {item.info}
+              </InfoTip>
+            </div>
             <div className="mono text-sm font-medium text-zinc-900 truncate">{item.value}</div>
           </div>
         ))}
@@ -131,20 +155,29 @@ export function Step5Output({ state, update, completedShapes }: Props) {
       )}
 
       {/* Format tabs */}
-      <div className="flex gap-1 bg-zinc-100 p-1 rounded-lg">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => update({ outputTab: tab.id })}
-            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors
-              ${state.outputTab === tab.id
-                ? 'bg-white text-zinc-900 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-700'}
-            `}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+          Output format
+          <InfoTip align="left">
+            These tabs show the same SHACL rules serialized in different RDF
+            syntaxes. Turtle is the most common format for reading by hand.
+          </InfoTip>
+        </p>
+        <div className="flex gap-1 bg-zinc-100 p-1 rounded-lg">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => update({ outputTab: tab.id })}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors
+                ${state.outputTab === tab.id
+                  ? 'bg-white text-zinc-900 shadow-sm'
+                  : 'text-zinc-500 hover:text-zinc-700'}
+              `}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Code area — loading dots while backend is generating */}
@@ -182,7 +215,13 @@ export function Step5Output({ state, update, completedShapes }: Props) {
       {/* ── Validation section ─────────────────────────────────────────────── */}
       <div className="border-t border-zinc-100 pt-5 space-y-3">
         <div>
-          <p className="text-sm font-semibold text-zinc-800">Validate your data graph</p>
+          <p className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+            Validate your data graph
+            <InfoTip align="left" placement="top">
+              Validation runs your RDF data through PySHACL using the shapes graph
+              above and reports any nodes that break the rules.
+            </InfoTip>
+          </p>
           <p className="text-xs text-zinc-400 mt-0.5">
             Drop your RDF data file here to check it against this shapes graph with PySHACL.
           </p>

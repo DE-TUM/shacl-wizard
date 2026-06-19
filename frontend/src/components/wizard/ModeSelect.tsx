@@ -1,4 +1,5 @@
 import type { WizardState } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   update: (patch: Partial<WizardState>) => void
@@ -25,6 +26,10 @@ export function ModeSelect({ update }: Props) {
 
       <p className="text-sm text-zinc-500">
         Generate valid SHACL shapes graphs without writing a single line of Turtle.
+        <InfoTip align="left" className="ml-1.5">
+          SHACL is a standard way to describe rules for RDF data, such as required
+          properties, allowed value types, and valid ranges.
+        </InfoTip>
       </p>
 
       {/* Mode cards */}
@@ -39,7 +44,13 @@ export function ModeSelect({ update }: Props) {
         >
           <div className="flex items-center gap-3">
             <div>
-              <div className="font-semibold text-zinc-900 text-sm">Manual mode</div>
+              <div className="font-semibold text-zinc-900 text-sm flex items-center gap-1.5">
+                Manual mode
+                <InfoTip align="right" focusable={false}>
+                  Use this when you already know the class, properties, and rules you
+                  want to describe.
+                </InfoTip>
+              </div>
               <div className="text-xs text-zinc-500 mt-0.5">
                 Start from scratch — the wizard asks everything step by step.
               </div>
@@ -54,7 +65,13 @@ export function ModeSelect({ update }: Props) {
         >
           <div className="flex items-center gap-3">
             <div>
-              <div className="font-semibold text-zinc-900 text-sm">Upload-assisted mode</div>
+              <div className="font-semibold text-zinc-900 text-sm flex items-center gap-1.5">
+                Upload-assisted mode
+                <InfoTip align="right" focusable={false}>
+                  The app scans an RDF data file to suggest classes, properties, and a
+                  few likely constraints. You still review everything before output.
+                </InfoTip>
+              </div>
               <div className="text-xs text-zinc-500 mt-0.5">
                 Upload an RDF file — classes and properties are pre-filled for you.
               </div>

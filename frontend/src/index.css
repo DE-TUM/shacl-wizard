@@ -22,3 +22,69 @@ pre   { font-family: 'DM Mono', monospace; }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  color: #71717a;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.info-tip:hover,
+.info-tip:focus-visible {
+  border-color: #a1a1aa;
+  color: #27272a;
+  outline: none;
+}
+
+.info-tip-on-dark {
+  border-color: rgb(255 255 255 / 0.35);
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+}
+
+.info-tip-on-dark:hover,
+.info-tip-on-dark:focus-visible {
+  border-color: rgb(255 255 255 / 0.65);
+  color: #fff;
+}
+
+.info-tip-bubble {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.5rem;
+  background: #18181b;
+  color: #f4f4f5;
+  box-shadow: 0 12px 28px rgb(24 24 27 / 0.18);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 1;
+  animation: infoTipFade 0.12s ease-out;
+}
+
+@keyframes infoTipFade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

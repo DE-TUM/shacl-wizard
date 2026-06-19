@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import type { WizardState, PropertyConstraints } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   state:  WizardState
@@ -45,8 +46,12 @@ export function Step4Constraints({ state, update }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
           What rules apply to each property?
+          <InfoTip align="left">
+            Constraints are the checks SHACL runs for a property, such as whether a
+            value is required, what type it must be, or which values are allowed.
+          </InfoTip>
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
           Select a property below and configure its constraints.
@@ -54,28 +59,37 @@ export function Step4Constraints({ state, update }: Props) {
       </div>
 
       {/* Property selector pills */}
-      <div className="flex flex-wrap gap-2">
-        {state.properties.map(prop => (
-          <button
-            key={prop.id}
-            onClick={() => setActiveId(prop.id)}
-            className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
-              ${activeId === prop.id
-                ? 'bg-zinc-900 text-white border-zinc-900'
-                : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
-            `}
-          >
-            {prop.path}
-            {(() => {
-              const count = Object.values(prop.constraints).filter(
-                v => v !== null && v !== undefined && v !== ''
-              ).length
-              return count > 0 ? (
-                <span className="ml-1.5 opacity-60">{count}×</span>
-              ) : null
-            })()}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+          Property to edit
+          <InfoTip align="left">
+            Pick a predicate first. The rules you set below will apply only to
+            values reached through that property.
+          </InfoTip>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {state.properties.map(prop => (
+            <button
+              key={prop.id}
+              onClick={() => setActiveId(prop.id)}
+              className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
+                ${activeId === prop.id
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
+              `}
+            >
+              {prop.path}
+              {(() => {
+                const count = Object.values(prop.constraints).filter(
+                  v => v !== null && v !== undefined && v !== ''
+                ).length
+                return count > 0 ? (
+                  <span className="ml-1.5 opacity-60">{count}x</span>
+                ) : null
+              })()}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Constraint editor */}
@@ -112,12 +126,19 @@ export function Step4Constraints({ state, update }: Props) {
                 ex:{activeProperty.path}
               </button>
             )}
+            <InfoTip align="left">
+              This property name becomes the sh:path in the output. SHACL checks the
+              values connected to the target node through this path.
+            </InfoTip>
           </div>
 
           <div className="p-4 border border-zinc-200 rounded-xl space-y-5">
 
             {/* ── Cardinality ── */}
-            <ConstraintSection label="How many values must this property have?">
+            <ConstraintSection
+              label="How many values must this property have?"
+              info="Cardinality controls whether the property is required and how many values are allowed for each target node."
+            >
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {[
                   { label: 'Exactly one',  min: '1', max: '1' },
@@ -140,13 +161,26 @@ export function Step4Constraints({ state, update }: Props) {
                 })}
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Custom min" value={draft.minCount} onChange={v => patchDraft({ minCount: v })} />
-                <NumberInput label="Custom max" value={draft.maxCount} onChange={v => patchDraft({ maxCount: v })} />
+                <NumberInput
+                  label="Custom min"
+                  value={draft.minCount}
+                  onChange={v => patchDraft({ minCount: v })}
+                  info="sh:minCount is the smallest number of values this property must have."
+                />
+                <NumberInput
+                  label="Custom max"
+                  value={draft.maxCount}
+                  onChange={v => patchDraft({ maxCount: v })}
+                  info="sh:maxCount is the largest number of values this property may have."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── Datatype ── */}
-            <ConstraintSection label="What type of value is expected?">
+            <ConstraintSection
+              label="What type of value is expected?"
+              info="Datatype constraints are for literal values such as text, numbers, dates, and booleans."
+            >
               <div className="flex flex-wrap gap-1.5">
                 {DATATYPE_OPTIONS.map(opt => (
                   <button
@@ -163,7 +197,10 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Node kind ── */}
-            <ConstraintSection label="Should the value be a resource or a plain value?">
+            <ConstraintSection
+              label="Should the value be a resource or a plain value?"
+              info="Node kind distinguishes named resources (IRIs), blank nodes, and plain literal values."
+            >
               <div className="flex flex-wrap gap-1.5">
                 {NODEKIND_OPTIONS.map(opt => (
                   <button
@@ -185,7 +222,10 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Pattern ── */}
-            <ConstraintSection label="Does the value need to match a specific format? (regex)">
+            <ConstraintSection
+              label="Does the value need to match a specific format? (regex)"
+              info="sh:pattern checks text with a regular expression, which is useful for emails, IDs, codes, and similar formats."
+            >
               <input
                 type="text"
                 value={draft.pattern ?? ''}
@@ -196,23 +236,52 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Numeric range ── */}
-            <ConstraintSection label="Is there a numeric range? (for integers / decimals)">
+            <ConstraintSection
+              label="Is there a numeric range? (for integers / decimals)"
+              info="Range constraints compare numeric or date-like values against lower and upper bounds."
+            >
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Min value ≥" value={draft.minInclusive} onChange={v => patchDraft({ minInclusive: v })} />
-                <NumberInput label="Max value ≤" value={draft.maxInclusive} onChange={v => patchDraft({ maxInclusive: v })} />
+                <NumberInput
+                  label="Min value >="
+                  value={draft.minInclusive}
+                  onChange={v => patchDraft({ minInclusive: v })}
+                  info="sh:minInclusive means the value must be this number or higher."
+                />
+                <NumberInput
+                  label="Max value <="
+                  value={draft.maxInclusive}
+                  onChange={v => patchDraft({ maxInclusive: v })}
+                  info="sh:maxInclusive means the value must be this number or lower."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── String length ── */}
-            <ConstraintSection label="Is there a character length limit?">
+            <ConstraintSection
+              label="Is there a character length limit?"
+              info="Length constraints count the characters in a literal text value."
+            >
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Min length" value={draft.minLength} onChange={v => patchDraft({ minLength: v })} />
-                <NumberInput label="Max length" value={draft.maxLength} onChange={v => patchDraft({ maxLength: v })} />
+                <NumberInput
+                  label="Min length"
+                  value={draft.minLength}
+                  onChange={v => patchDraft({ minLength: v })}
+                  info="sh:minLength is the fewest characters the value may contain."
+                />
+                <NumberInput
+                  label="Max length"
+                  value={draft.maxLength}
+                  onChange={v => patchDraft({ maxLength: v })}
+                  info="sh:maxLength is the most characters the value may contain."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── sh:in ── */}
-            <ConstraintSection label="Must the value be one of a fixed list? (sh:in)">
+            <ConstraintSection
+              label="Must the value be one of a fixed list? (sh:in)"
+              info="sh:in means the value must match one item from the allowed list, such as active, inactive, or pending."
+            >
               <input
                 type="text"
                 value={draft.in ?? ''}
@@ -266,23 +335,46 @@ export function Step4Constraints({ state, update }: Props) {
 
 // ─── Small reusable sub-components ───────────────────────────────────────────
 
-function ConstraintSection({ label, children }: { label: string; children: React.ReactNode }) {
+function ConstraintSection({
+  label,
+  info,
+  children,
+}: {
+  label: string
+  info?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">{label}</p>
+      <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        {label}
+        {info && (
+          <InfoTip align="left" placement="top">
+            {info}
+          </InfoTip>
+        )}
+      </p>
       {children}
     </div>
   )
 }
 
-function NumberInput({ label, value, onChange }: {
+function NumberInput({ label, value, onChange, info }: {
   label:    string
   value:    string | undefined
   onChange: (v: string | undefined) => void
+  info?:    string
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] text-zinc-400">{label}</label>
+      <label className="text-[10px] text-zinc-400 flex items-center gap-1.5">
+        {label}
+        {info && (
+          <InfoTip align="left" placement="top">
+            {info}
+          </InfoTip>
+        )}
+      </label>
       <input
         type="number"
         value={value ?? ''}

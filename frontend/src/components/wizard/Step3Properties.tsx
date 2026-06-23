@@ -13,6 +13,7 @@ interface Props {
 }
 
 export function Step3Properties({ state, update }: Props) {
+  const pfx = state.selectedPrefix || 'ex'
   const [input, setInput] = useState('')
   const [pillSuggestions, setPillSuggestions] = useState<string[]>([])
   const [loadingPills, setLoadingPills] = useState(false)
@@ -22,7 +23,10 @@ export function Step3Properties({ state, update }: Props) {
   useEffect(() => {
     if (state.nlParsed) return
     setLoadingPills(true)
-    suggestProperties(state.shapeName, state.targetValue, state.targetType || 'class')
+    suggestProperties(state.shapeName, state.targetValue, state.targetType || 'class', {
+      prefixes: state.detectedPrefixes,
+      selectedPrefix: state.selectedPrefix,
+    })
       .then(result => setPillSuggestions(result.properties.map(p => p.path)))
       .catch(() => {})
       .finally(() => setLoadingPills(false))
@@ -35,7 +39,12 @@ export function Step3Properties({ state, update }: Props) {
 
   const showOverlay = input === '' && !state.nlParsed && (loadingPills || availablePills.length > 0)
 
-  const uploadSuggestions = state.suggestedProperties.filter(
+  const classFilteredProperties =
+    state.targetValue && state.propertiesByClass[state.targetValue]
+      ? state.propertiesByClass[state.targetValue]
+      : state.suggestedProperties
+
+  const uploadSuggestions = classFilteredProperties.filter(
     p => !state.properties.find(prop => prop.path.toLowerCase() === p.toLowerCase())
   )
 
@@ -84,7 +93,7 @@ export function Step3Properties({ state, update }: Props) {
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
           Add the predicates you want to validate on{' '}
-          <span className="mono text-zinc-700">ex:{state.targetValue}</span> nodes.
+          <span className="mono text-zinc-700">{pfx}:{state.targetValue}</span> nodes.
         </p>
       </div>
 
@@ -92,7 +101,7 @@ export function Step3Properties({ state, update }: Props) {
       <div className="space-y-1.5">
         <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
           Property path
-          <InfoTip align="left">
+          <InfoTip align="left" className="lowercase">
             A property path points from the node being validated to the value being
             checked. For a simple path, enter the predicate name, such as email.
           </InfoTip>
@@ -153,7 +162,7 @@ export function Step3Properties({ state, update }: Props) {
           <div className="flex items-center justify-between">
             <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
               Detected in your file:
-              <InfoTip align="left">
+              <InfoTip align="left" className="lowercase">
                 These predicates appeared in the uploaded RDF data. Add the ones
                 whose values should be checked by the shape.
               </InfoTip>
@@ -185,6 +194,14 @@ export function Step3Properties({ state, update }: Props) {
       {/* Property list */}
       {state.properties.length > 0 ? (
         <div className="space-y-2">
+          <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+            Added properties
+            <InfoTip align="left" className="lowercase">
+              The number badge shows how many SHACL constraints are already
+              attached to that property — such as required count, datatype,
+              or value range. You can configure them in the next step.
+            </InfoTip>
+          </p>
           {state.properties.map(prop => (
             <div
               key={prop.id}
@@ -206,7 +223,7 @@ export function Step3Properties({ state, update }: Props) {
                     />
                   ) : (
                     <span className="mono text-sm font-medium text-zinc-800">
-                      ex:{prop.path}
+                      {prop.path.includes(':') ? prop.path : `${pfx}:${prop.path}`}
                     </span>
                   )}
                   {(() => {
@@ -214,12 +231,8 @@ export function Step3Properties({ state, update }: Props) {
                       v => v !== null && v !== undefined && v !== ''
                     ).length
                     return count > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">
                         {count} rules
-                        <InfoTip align="right" placement="top">
-                          Rules are SHACL constraints already attached to this
-                          property, such as required count, datatype, or value range.
-                        </InfoTip>
                       </span>
                     ) : null
                   })()}

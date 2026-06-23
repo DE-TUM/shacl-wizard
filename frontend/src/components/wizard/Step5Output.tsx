@@ -127,7 +127,7 @@ export function Step5Output({ state, update, completedShapes }: Props) {
           <div key={item.label} className="bg-zinc-50 rounded-lg p-3 border border-zinc-100">
             <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1 flex items-center gap-1.5">
               {item.label}
-              <InfoTip align="left" placement="bottom">
+              <InfoTip align="left" placement="bottom" className="lowercase">
                 {item.info}
               </InfoTip>
             </div>
@@ -158,7 +158,7 @@ export function Step5Output({ state, update, completedShapes }: Props) {
       <div className="space-y-1.5">
         <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
           Output format
-          <InfoTip align="left">
+          <InfoTip align="left" className="lowercase">
             These tabs show the same SHACL rules serialized in different RDF
             syntaxes. Turtle is the most common format for reading by hand.
           </InfoTip>

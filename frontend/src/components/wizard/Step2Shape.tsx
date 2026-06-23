@@ -37,32 +37,44 @@ function mergeConstraints(
   return result
 }
 
+// Match on the local name (part after the last colon) so the AI's bare
+// "jobTitle" lines up with the upload's CURIE "schema:jobTitle".
+function localName(path: string): string {
+  const i = path.lastIndexOf(':')
+  return (i >= 0 ? path.slice(i + 1) : path).toLowerCase()
+}
+
 function mergeWithUpload(
   aiProps: PropertyShape[],
   upload: Record<string, Partial<PropertyConstraints>>,
 ): PropertyShape[] {
-  // Build a case-insensitive index of upload entries
+  // Index upload entries by local name → [full CURIE path, constraints]
   const uploadIndex = new Map<string, [string, Partial<PropertyConstraints>]>()
   for (const [path, constraints] of Object.entries(upload)) {
-    uploadIndex.set(path.toLowerCase(), [path, constraints])
+    uploadIndex.set(localName(path), [path, constraints])
   }
 
-  // Start with AI properties, merging upload data where paths overlap
+  // Start with AI properties, merging upload data where local names overlap.
   const merged: PropertyShape[] = []
-  const aiLowerPaths = new Set<string>()
+  const usedUploadKeys = new Set<string>()
   for (const aiProp of aiProps) {
-    const key = aiProp.path.toLowerCase()
-    aiLowerPaths.add(key)
+    const key = localName(aiProp.path)
     const upEntry = uploadIndex.get(key)
-    merged.push({
-      ...aiProp,
-      constraints: upEntry ? mergeConstraints(aiProp.constraints, upEntry[1]) : aiProp.constraints,
-    })
+    if (upEntry) {
+      usedUploadKeys.add(key)
+      merged.push({
+        ...aiProp,
+        path: upEntry[0], // prefer the file's full CURIE path over the AI's bare name
+        constraints: mergeConstraints(aiProp.constraints, upEntry[1]),
+      })
+    } else {
+      merged.push(aiProp)
+    }
   }
 
   // Append upload-only properties that AI didn't mention
   for (const [path, constraints] of Object.entries(upload)) {
-    if (!aiLowerPaths.has(path.toLowerCase())) {
+    if (!usedUploadKeys.has(localName(path))) {
       merged.push({ id: uid(), path, constraints: constraints as PropertyConstraints })
     }
   }
@@ -111,11 +123,12 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
       <div className="space-y-1.5">
         <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
           Shape name
-          <InfoTip align="left">
+          <InfoTip align="left" className="lowercase">
             This is not the class itself. It is the rule set that checks nodes from
             the class or target you chose.
           </InfoTip>
         </label>
+        
         <div className="relative">
           <input
             autoFocus
@@ -193,7 +206,7 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
           <div className="space-y-2 fade-up">
             <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
               Plain-English constraints
-              <InfoTip align="left">
+              <InfoTip align="left" className="lowercase">
                 Mention required fields, optional fields, value types, ranges,
                 formats, and fixed lists. You can edit every suggestion later.
               </InfoTip>

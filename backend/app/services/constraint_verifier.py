@@ -46,9 +46,18 @@ def verify_constraints_with_llm(
     graph: Graph,
     settings: Settings,
 ) -> dict[str, dict]:
+    graph_triple_count = sum(1 for _ in graph)
+    print(
+        f"[LLM VERIFY DEBUG] called | inferred constraints: {len(inferred)} | "
+        f"will sample 50 triples from graph ({graph_triple_count:,} total)",
+        flush=True,
+    )
+
     if not inferred:
+        print("[LLM VERIFY DEBUG] early return — no inferred constraints (graph may be all rdf:type triples)", flush=True)
         return inferred
     if not (settings.should_try_groq or settings.should_try_gemini):
+        print("[LLM VERIFY DEBUG] early return — no LLM provider configured", flush=True)
         return inferred
 
     turtle_sample = _sample_triples(graph)
@@ -65,18 +74,23 @@ def verify_constraints_with_llm(
     llm_updates: dict[str, Any] | None = None
 
     if settings.should_try_groq:
+        print(f"[LLM VERIFY DEBUG] calling groq | model={settings.groq_model}", flush=True)
         try:
             llm_updates = _call_groq(user_message, settings)
-        except Exception:
-            pass
+            print("[LLM VERIFY DEBUG] groq call succeeded", flush=True)
+        except Exception as _e:
+            print(f"[LLM VERIFY DEBUG] groq call failed | error={_e}", flush=True)
 
     if llm_updates is None and settings.should_try_gemini:
+        print(f"[LLM VERIFY DEBUG] calling gemini | model={settings.gemini_model}", flush=True)
         try:
             llm_updates = _call_gemini(user_message, settings)
-        except Exception:
-            pass
+            print("[LLM VERIFY DEBUG] gemini call succeeded", flush=True)
+        except Exception as _e:
+            print(f"[LLM VERIFY DEBUG] gemini call failed | error={_e}", flush=True)
 
     if llm_updates is None:
+        print("[LLM VERIFY DEBUG] no LLM updates returned — keeping Python-inferred constraints", flush=True)
         return inferred
 
     merged = _merge(inferred, llm_updates)

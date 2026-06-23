@@ -40,6 +40,7 @@ class PropertyConstraints(CamelModel):
     max_length: str | None = Field(default=None, alias="maxLength")
     in_: str | None = Field(default=None, alias="in")
     class_: str | None = Field(default=None, alias="class")
+    node_: str | None = Field(default=None, alias="node")
     language_in: str | None = Field(default=None, alias="languageIn")
 
     @field_validator("*", mode="before")
@@ -88,6 +89,9 @@ class WizardState(CamelModel):
     suggested_classes: list[str] = Field(default_factory=list, alias="suggestedClasses")
     suggested_properties: list[str] = Field(default_factory=list, alias="suggestedProperties")
     completed_shapes: list[CompletedShape] = Field(default_factory=list, alias="completedShapes")
+    selected_prefix: str = Field(default="ex", alias="selectedPrefix")
+    selected_namespace: str = Field(default="http://example.org/", alias="selectedNamespace")
+    detected_prefixes: dict[str, str] = Field(default_factory=dict, alias="detectedPrefixes")
 
     @field_validator("target_type", mode="before")
     @classmethod
@@ -100,6 +104,9 @@ class ParseNLRequest(CamelModel):
     target_type: TargetType | None = Field(default=None, alias="targetType")
     target_value: str | None = Field(default=None, alias="targetValue")
     shape_name: str | None = Field(default=None, alias="shapeName")
+    prefixes: dict[str, str] = Field(default_factory=dict)
+    selected_prefix: str | None = Field(default=None, alias="selectedPrefix")
+    existing_shapes: list[str] = Field(default_factory=list, alias="existingShapes")
 
     @field_validator("target_type", mode="before")
     @classmethod
@@ -123,6 +130,9 @@ class GenerateResponse(CamelModel):
 class ParseRDFResponse(CamelModel):
     classes: list[str]
     properties: list[str]
+    properties_by_class: dict[str, list[str]] = Field(
+        default_factory=dict, alias="propertiesByClass"
+    )
     prefixes: dict[str, str]
     detected_datatypes: dict[str, str] = Field(alias="detectedDatatypes")
     suggested_constraints: dict[str, dict] = Field(

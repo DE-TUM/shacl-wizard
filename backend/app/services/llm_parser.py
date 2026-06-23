@@ -38,6 +38,7 @@ LLM_SCHEMA: dict[str, Any] = {
                             "maxLength": {"type": "string"},
                             "in": {"type": "string"},
                             "class": {"type": "string"},
+                            "node": {"type": "string"},
                             "languageIn": {"type": "string"},
                         },
                     },
@@ -55,14 +56,44 @@ SYSTEM_INSTRUCTIONS = """
 You convert natural-language validation requirements into SHACL Core property
 shapes for a beginner-friendly wizard.
 
-Return JSON matching the schema exactly. Use local property names only, without
-the ex: prefix. Constraint values must be strings because the frontend stores
-wizard input as strings. Only use these constraint fields:
-minCount, maxCount, datatype, nodeKind, pattern, minInclusive, maxInclusive,
-minExclusive, maxExclusive, minLength, maxLength, in, class, languageIn.
+Return JSON matching the schema exactly. Constraint values must be strings
+because the frontend stores wizard input as strings. Only use these constraint
+fields: minCount, maxCount, datatype, nodeKind, pattern, minInclusive,
+maxInclusive, minExclusive, maxExclusive, minLength, maxLength, in, class, node,
+languageIn.
 
-Prefer common SHACL/XSD CURIEs such as xsd:string, xsd:integer, xsd:decimal,
-xsd:date, xsd:boolean, xsd:anyURI, sh:IRI, sh:Literal, and sh:BlankNode.
+Use SHACL/XSD CURIEs such as xsd:string, xsd:integer, xsd:decimal, xsd:date,
+xsd:boolean, xsd:anyURI, sh:IRI, sh:Literal, and sh:BlankNode only when the
+user explicitly specifies a value type. Do NOT infer or add datatype unless the
+user names one (e.g. "must be an integer", "must be a date"). Never set
+sh:datatype on a property that has sh:nodeKind sh:IRI or sh:node.
+
+Property path naming — the input includes "availablePrefixes" (a map of
+prefix -> namespace) and "selectedPrefix":
+- If the user writes a property explicitly as a CURIE (prefix:localName, e.g.
+  "ub:name", "ub:worksFor"), preserve that exact CURIE verbatim in "path",
+  including the prefix — even if that prefix is not in availablePrefixes. The
+  user chose it deliberately; do not strip or rename it.
+- Otherwise, if a property clearly belongs to one of the availablePrefixes
+  vocabularies (e.g. a person's name under foaf, a job title under schema), use
+  that CURIE form for "path", such as foaf:name or schema:jobTitle.
+- Otherwise use a bare local name with no prefix (e.g. "salary"); the wizard
+  automatically applies the selectedPrefix to bare names.
+- Never use the ex: prefix and never invent a prefix the user did not write and
+  that is not in availablePrefixes.
+
+Shape references (node) — the input includes "existingShapes", a list of
+NodeShape names already defined in this graph:
+- If the description says a property's value must itself conform to / be a /
+  link to another shape (e.g. "worksFor ... must conform to ub:DepartmentShape",
+  "each worksFor must be a valid Organization"), set "node" to that shape name.
+- If the user names the shape explicitly (e.g. "ub:DepartmentShape"), use that
+  exact name verbatim — preserve its prefix — even if it is not yet in
+  existingShapes. The user is referencing a shape they intend to define.
+- When the user does not name a shape but existingShapes contains an obvious
+  match, use that exact name from existingShapes.
+- Never invent a shape name the user did not write and that is not in
+  existingShapes.
 
 For nodeKind: default to sh:IRI when a property references another entity or
 resource. Only use sh:BlankNode if the user explicitly describes an anonymous,
@@ -74,18 +105,17 @@ both maxInclusive and maxExclusive at the same time. When a user says "between
 X and Y", use only minInclusive and maxInclusive. Only use exclusive bounds if
 the user explicitly says "more than" or "less than" (strictly).
 
-Cardinality rules — you MUST follow these precisely:
-- If the description says "must have", "exactly one", "required", or implies a
-  single mandatory value per entity (e.g. "the X must be"), set BOTH minCount
-  AND maxCount to "1". Never leave maxCount null when minCount is "1" and the
-  description implies a single value.
-- If the description says "at least one" or "required" but can have more than
-  one value, set minCount to "1" and leave maxCount null.
-- If the description says "optional" or "can have multiple", leave both null.
-- Do NOT leave minCount and maxCount null for properties the description treats
-  as singular and mandatory. When in doubt and the property has a datatype that
-  typically holds one value (integer, string, date), set BOTH minCount and
-  maxCount to "1".
+Cardinality rules — follow the user's explicit wording exactly; never infer from
+datatype:
+- "exactly one", "exactly one value", "one and only one" → minCount "1" AND
+  maxCount "1".
+- "at least one", "one or more", "required" → minCount "1", maxCount null.
+  NEVER add maxCount here even if the property is a string or date.
+- "at most one", "no more than one", "optional but at most one" → maxCount "1",
+  minCount null.
+- "optional", "zero or more", "can have multiple" → leave both null.
+- "exactly N" → minCount "N" AND maxCount "N".
+Only add maxCount when the user explicitly said "exactly one" or "at most one".
 """.strip()
 
 
@@ -147,10 +177,11 @@ def parse_with_groq(request: ParseNLRequest, settings: Settings) -> ParseNLRespo
     )
     raw_text = response.choices[0].message.content or ""
     payload = json.loads(raw_text)
+    allowed_shapes = set(request.existing_shapes)
     properties = [
         PropertyShape(
             path=item["path"],
-            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}))),
+            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}), allowed_shapes, request.description)),
         )
         for item in payload.get("properties", [])
         if item.get("path")
@@ -183,10 +214,11 @@ def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLRes
 
     raw_text = _extract_response_text(response)
     payload = json.loads(raw_text)
+    allowed_shapes = set(request.existing_shapes)
     properties = [
         PropertyShape(
             path=item["path"],
-            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}))),
+            constraints=PropertyConstraints(**_normalize_constraints(item.get("constraints", {}), allowed_shapes, request.description)),
         )
         for item in payload.get("properties", [])
         if item.get("path")
@@ -201,7 +233,11 @@ def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLRes
     )
 
 
-def _normalize_constraints(raw: dict) -> dict:
+def _normalize_constraints(
+    raw: dict,
+    allowed_shapes: set[str] | None = None,
+    description: str = "",
+) -> dict:
     result = dict(raw)
     if result.get("in"):
         result["in"] = _normalize_in_value(result["in"])
@@ -209,11 +245,32 @@ def _normalize_constraints(raw: dict) -> dict:
         result["minExclusive"] = None
     if result.get("maxInclusive"):
         result["maxExclusive"] = None
-    # If LLM set minCount "1" but left maxCount null on a scalar property (has a
-    # datatype), the description almost certainly implied a single value — enforce it.
-    if result.get("minCount") == "1" and not result.get("maxCount") and result.get("datatype"):
-        result["maxCount"] = "1"
+    # Strip datatype from IRI/node-reference properties — datatypes apply only to literals.
+    if result.get("nodeKind") in ("sh:IRI", "IRI") or result.get("node"):
+        result["datatype"] = None
+    # Keep a node reference when it is a real, defined shape OR when the user named
+    # that shape verbatim in the request — referencing a shape they intend to define
+    # later (e.g. "must conform to ub:DepartmentShape") is legitimate. Only drop a
+    # reference the model invented that the user never mentioned.
+    if result.get("node") and not _node_is_allowed(result["node"], allowed_shapes, description):
+        result["node"] = None
     return result
+
+
+def _node_is_allowed(
+    node: str,
+    allowed_shapes: set[str] | None,
+    description: str,
+) -> bool:
+    if node in (allowed_shapes or set()):
+        return True
+    if not description:
+        return False
+    # Match the user's verbatim mention of the shape, by full CURIE or local name,
+    # so "ub:DepartmentShape" and "DepartmentShape" both survive.
+    local = node.split(":", 1)[-1]
+    folded = description.lower()
+    return node.lower() in folded or (bool(local) and local.lower() in folded)
 
 
 def _normalize_in_value(value: str) -> str:
@@ -231,6 +288,9 @@ def _build_user_message(request: ParseNLRequest) -> str:
         "targetType": request.target_type,
         "targetValue": request.target_value,
         "shapeName": request.shape_name,
+        "availablePrefixes": request.prefixes,
+        "selectedPrefix": request.selected_prefix,
+        "existingShapes": request.existing_shapes,
     }
     return (
         "Parse this wizard request into SHACL property constraints. "

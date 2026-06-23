@@ -40,25 +40,6 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
-def _jena_endpoints() -> tuple[str | None, str | None]:
-    sparql_endpoint = os.getenv("JENA_SPARQL_ENDPOINT") or None
-    graph_store_endpoint = os.getenv("JENA_GRAPH_STORE_ENDPOINT") or None
-    if sparql_endpoint and graph_store_endpoint:
-        return sparql_endpoint, graph_store_endpoint
-
-    base_url = os.getenv("JENA_BASE_URL") or None
-    fuseki_command = os.getenv("JENA_FUSEKI_COMMAND") or None
-    if not base_url and not fuseki_command:
-        return sparql_endpoint, graph_store_endpoint
-
-    base = (base_url or "http://127.0.0.1:3030").rstrip("/")
-    dataset = os.getenv("JENA_DATASET", "shacl-wizard").strip("/")
-    return (
-        sparql_endpoint or f"{base}/{dataset}/sparql",
-        graph_store_endpoint or f"{base}/{dataset}/data",
-    )
-
-
 @dataclass(frozen=True)
 class Settings:
     app_name: str
@@ -71,11 +52,16 @@ class Settings:
     gemini_model: str
     rdf_parser_backend: str
     rdf_inference_limit_triples: int
-    jena_sparql_endpoint: str | None
-    jena_graph_store_endpoint: str | None
-    jena_fuseki_command: str | None
-    jena_startup_timeout_seconds: float
+    rdf_llm_verify_limit_triples: int
+    jena_java_bin: str | None
+    jena_class_dir: str | None
     jena_request_timeout_seconds: float
+    jena_min_file_size_mb: float
+    rdf_sample_tier1_threshold: int
+    rdf_sample_tier2_threshold: int
+    rdf_sample_tier1_rate: float
+    rdf_sample_tier2_rate: float
+    rdf_sample_max: int
 
     @property
     def should_try_groq(self) -> bool:
@@ -97,7 +83,7 @@ class Settings:
 
     @property
     def jena_configured(self) -> bool:
-        return bool(self.jena_sparql_endpoint and self.jena_graph_store_endpoint)
+        return bool(self.jena_java_bin and self.jena_class_dir)
 
     @property
     def should_try_jena(self) -> bool:
@@ -109,8 +95,6 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    jena_sparql_endpoint, jena_graph_store_endpoint = _jena_endpoints()
-
     return Settings(
         app_name=os.getenv("APP_NAME", "SHACL Wizard Backend"),
         base_uri=os.getenv("BASE_URI", "http://example.org/"),
@@ -127,9 +111,14 @@ def get_settings() -> Settings:
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         rdf_parser_backend=_rdf_parser_backend(os.getenv("RDF_PARSER_BACKEND", "auto")),
         rdf_inference_limit_triples=_int_env("RDF_INFERENCE_LIMIT_TRIPLES", 10_000),
-        jena_sparql_endpoint=jena_sparql_endpoint,
-        jena_graph_store_endpoint=jena_graph_store_endpoint,
-        jena_fuseki_command=os.getenv("JENA_FUSEKI_COMMAND") or None,
-        jena_startup_timeout_seconds=_float_env("JENA_STARTUP_TIMEOUT_SECONDS", 10.0),
-        jena_request_timeout_seconds=_float_env("JENA_REQUEST_TIMEOUT_SECONDS", 30.0),
+        rdf_llm_verify_limit_triples=_int_env("RDF_LLM_VERIFY_LIMIT_TRIPLES", 500_000),
+        jena_java_bin=os.getenv("JENA_JAVA_BIN") or None,
+        jena_class_dir=os.getenv("JENA_CLASS_DIR") or None,
+        jena_request_timeout_seconds=_float_env("JENA_REQUEST_TIMEOUT_SECONDS", 600.0),
+        jena_min_file_size_mb=_float_env("JENA_MIN_FILE_SIZE_MB", 200.0),
+        rdf_sample_tier1_threshold=_int_env("RDF_SAMPLE_TIER1_THRESHOLD", 100_000),
+        rdf_sample_tier2_threshold=_int_env("RDF_SAMPLE_TIER2_THRESHOLD", 1_000_000),
+        rdf_sample_tier1_rate=_float_env("RDF_SAMPLE_TIER1_RATE", 0.5),
+        rdf_sample_tier2_rate=_float_env("RDF_SAMPLE_TIER2_RATE", 0.2),
+        rdf_sample_max=_int_env("RDF_SAMPLE_MAX", 500_000),
     )

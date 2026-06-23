@@ -14,6 +14,7 @@ interface Props {
 }
 
 export function Step4Constraints({ state, update }: Props) {
+  const pfx = state.selectedPrefix || 'ex'
   const [activeId, setActiveId]         = useState<string | null>(null)
   const [draft,    setDraft]            = useState<PropertyConstraints>({})
   const [editingName, setEditingName]   = useState(false)
@@ -62,7 +63,7 @@ export function Step4Constraints({ state, update }: Props) {
       <div className="space-y-1.5">
         <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
           Property to edit
-          <InfoTip align="left">
+          <InfoTip align="left" className="lowercase">
             Pick a predicate first. The rules you set below will apply only to
             values reached through that property.
           </InfoTip>
@@ -123,7 +124,7 @@ export function Step4Constraints({ state, update }: Props) {
                 className="mono text-sm font-medium text-zinc-800 hover:text-emerald-700 transition-colors"
                 title="Click to rename"
               >
-                ex:{activeProperty.path}
+                {activeProperty.path.includes(':') ? activeProperty.path : `${pfx}:${activeProperty.path}`}
               </button>
             )}
             <InfoTip align="left">
@@ -146,7 +147,7 @@ export function Step4Constraints({ state, update }: Props) {
                   { label: 'At most one',  min: '', max: '1' },
                   { label: 'Optional',     min: '', max: '' },
                 ].map(opt => {
-                  const active = draft.minCount === (opt.min || undefined) && draft.maxCount === (opt.max || undefined)
+                  const active = (draft.minCount || undefined) === (opt.min || undefined) && (draft.maxCount || undefined) === (opt.max || undefined)
                   return (
                     <button
                       key={opt.label}
@@ -206,11 +207,34 @@ export function Step4Constraints({ state, update }: Props) {
                   <button
                     key={opt.value}
                     onClick={() => patchDraft({ nodeKind: draft.nodeKind === opt.value ? undefined : opt.value })}
-                    className={`text-[11px] px-3 py-1 rounded-full border transition-colors
+                    className={`inline-flex items-center gap-1 text-[11px] px-3 py-1 rounded-full border transition-colors
                       ${draft.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
                     `}
                   >
                     {opt.label}
+                    {opt.value === 'sh:IRI' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is a named resource identified by a URI, like
+                        <span className="font-mono"> ex:Paris</span> or a full URL. Use this
+                        when the property links to another entity in the graph.
+                      </InfoTip>
+                    )}
+                    {opt.value === 'sh:BlankNode' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is an anonymous node with no global identifier. Blank nodes
+                        are embedded sub-structures (e.g. an address block) that exist only
+                        inside this graph and cannot be referenced from outside.
+                      </InfoTip>
+                    )}
+                    {opt.value === 'sh:Literal' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is a plain data value such as a string, number, date, or
+                        boolean, not a link to another resource. Examples:
+                        <span className="font-mono"> "Alice"</span>,
+                        <span className="font-mono"> 42</span>,
+                        <span className="font-mono"> true</span>.
+                      </InfoTip>
+                    )}
                   </button>
                 ))}
               </div>
@@ -291,6 +315,41 @@ export function Step4Constraints({ state, update }: Props) {
               />
             </ConstraintSection>
 
+            {/* ── sh:node ── */}
+            <ConstraintSection
+              label="Must the value conform to another shape? (sh:node)"
+              info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes — e.g. every worksFor value must match UniversityShape."
+            >
+              {state.completedShapes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {state.completedShapes.map(cs => (
+                    <button
+                      key={cs.shapeName}
+                      onClick={() => patchDraft({ node: draft.node === cs.shapeName ? undefined : cs.shapeName })}
+                      className={`text-[11px] px-3 py-1 rounded-full border transition-colors mono
+                        ${draft.node === cs.shapeName
+                          ? 'bg-zinc-900 text-white border-zinc-900'
+                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                      `}
+                    >
+                      {pfx}:{cs.shapeName}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                type="text"
+                value={draft.node ?? ''}
+                onChange={e => patchDraft({ node: e.target.value || undefined })}
+                placeholder={
+                  state.completedShapes.length > 0
+                    ? 'or type a shape CURIE, e.g. ex:AddressShape'
+                    : `e.g. ${pfx}:AddressShape`
+                }
+                className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+              />
+            </ConstraintSection>
+
           </div>
 
           {/* Active constraint badges */}
@@ -321,7 +380,7 @@ export function Step4Constraints({ state, update }: Props) {
             className="w-full h-10 rounded-md bg-zinc-900 hover:bg-zinc-700 text-white text-sm transition-colors"
           >
             Save rules for{' '}
-            <span className="mono ml-1 opacity-70">ex:{activeProperty.path}</span>
+            <span className="mono ml-1 opacity-70">{activeProperty.path.includes(':') ? activeProperty.path : `${pfx}:${activeProperty.path}`}</span>
           </button>
         </div>
       ) : (
@@ -349,7 +408,7 @@ function ConstraintSection({
       <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
         {label}
         {info && (
-          <InfoTip align="left" placement="top">
+          <InfoTip align="left" placement="top" className="lowercase">
             {info}
           </InfoTip>
         )}
@@ -370,7 +429,7 @@ function NumberInput({ label, value, onChange, info }: {
       <label className="text-[10px] text-zinc-400 flex items-center gap-1.5">
         {label}
         {info && (
-          <InfoTip align="left" placement="top">
+          <InfoTip align="left" placement="top" className="lowercase">
             {info}
           </InfoTip>
         )}

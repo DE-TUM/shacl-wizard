@@ -26,10 +26,6 @@ export function ModeSelect({ update }: Props) {
 
       <p className="text-sm text-zinc-500">
         Generate valid SHACL shapes graphs without writing a single line of Turtle.
-        <InfoTip align="left" className="ml-1.5">
-          SHACL is a standard way to describe rules for RDF data, such as required
-          properties, allowed value types, and valid ranges.
-        </InfoTip>
       </p>
 
       {/* Mode cards */}

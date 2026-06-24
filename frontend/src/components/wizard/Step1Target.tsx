@@ -28,10 +28,21 @@ const TARGET_HELP: Record<TargetType, string> = {
   objectsOf: 'Use this for every resource that appears as the value of a property.',
 }
 
+// A referenced shape "DepartmentShape" maps to class "Department" but keeps the
+// full "DepartmentShape" as the shape name.
+const classNameOf = (ref: string) => {
+  const local = ref.split(':').pop()!
+  return local.endsWith('Shape') ? local.slice(0, -'Shape'.length) : local
+}
+const shapeNameOf = (ref: string) => ref.split(':').pop()!
+
 export function Step1Target({ state, update }: Props) {
   const [customPrefix, setCustomPrefix] = useState('')
   const [customNamespace, setCustomNamespace] = useState('')
   const [showCustom, setShowCustom] = useState(false)
+  // Remembers which "referenced shape to define" pill was picked, so switching
+  // target type keeps the prefilled class/shape names instead of clearing them.
+  const [selectedRef, setSelectedRef] = useState<string | null>(null)
 
   const pfx = state.selectedPrefix
   const ns  = state.selectedNamespace
@@ -187,12 +198,14 @@ export function Step1Target({ state, update }: Props) {
           </p>
           <div className="flex flex-wrap gap-1.5">
             {state.pendingNodeRefs.map(ref => {
-              const local = ref.split(':').pop()!
-              const isSelected = state.targetValue === local && state.targetType === 'class'
+              const isSelected = selectedRef === ref
               return (
                 <button
                   key={ref}
-                  onClick={() => update({ targetType: 'class', targetValue: local, shapeName: local })}
+                  onClick={() => {
+                    setSelectedRef(ref)
+                    update({ targetType: 'class', targetValue: classNameOf(ref), shapeName: shapeNameOf(ref) })
+                  }}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors mono
                     ${isSelected
                       ? 'bg-emerald-700 text-white border-emerald-700'
@@ -217,7 +230,11 @@ export function Step1Target({ state, update }: Props) {
             badge={opt.shacl}
             info={TARGET_HELP[opt.value]}
             selected={state.targetType === opt.value}
-            onClick={() => update({ targetType: opt.value, targetValue: '' })}
+            onClick={() => update({
+              targetType: opt.value,
+              // Keep the prefilled value from a picked reference; otherwise clear.
+              targetValue: selectedRef ? classNameOf(selectedRef) : '',
+            })}
           />
         ))}
       </div>
@@ -264,7 +281,7 @@ export function Step1Target({ state, update }: Props) {
             autoFocus
             type="text"
             value={state.targetValue}
-            onChange={e => update({ targetValue: e.target.value })}
+            onChange={e => { setSelectedRef(null); update({ targetValue: e.target.value }) }}
             placeholder={
               state.targetType === 'class'      ? 'e.g. Person, Car, Product' :
               state.targetType === 'node'       ? 'e.g. Alice, Product_123' :

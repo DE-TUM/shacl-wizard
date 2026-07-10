@@ -9,6 +9,8 @@
 import { useState, useEffect } from 'react'
 import type { WizardState, PropertyConstraints } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
+import { detectConstraintIssues } from '@/utils/constraintWarnings'
+import type { IssueLevel } from '@/utils/constraintWarnings'
 import { InfoTip } from './InfoTip'
 
 interface Props {
@@ -60,6 +62,18 @@ export function Step4Constraints({ state, update }: Props) {
       const v = draft[k]
       return v !== undefined && v !== null && v !== ''
     }).length
+
+  // Cross-field validation (Phase 0.5). Warns but never blocks — SHACL permits
+  // writing an unsatisfiable shape.
+  const issues = detectConstraintIssues(draft)
+
+  // Worst issue level touching a given category, for the section header marker.
+  const sectionIssueLevel = (id: string): IssueLevel | null => {
+    const keys = CATEGORY_KEYS[id]
+    const matched = issues.filter(i => i.fields.some(f => keys.includes(f)))
+    if (matched.some(i => i.level === 'contradiction')) return 'contradiction'
+    return matched.length > 0 ? 'redundant' : null
+  }
 
   const saveAndClose = () => {
     if (!activeId) return
@@ -167,6 +181,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="Value Type"
               count={countFor('valueType')}
+              issueLevel={sectionIssueLevel('valueType')}
               isOpen={openSection === 'valueType'}
               onToggle={() => toggleSection('valueType')}
             >
@@ -243,6 +258,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="Cardinality"
               count={countFor('cardinality')}
+              issueLevel={sectionIssueLevel('cardinality')}
               isOpen={openSection === 'cardinality'}
               onToggle={() => toggleSection('cardinality')}
             >
@@ -292,6 +308,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="Value Range"
               count={countFor('valueRange')}
+              issueLevel={sectionIssueLevel('valueRange')}
               isOpen={openSection === 'valueRange'}
               onToggle={() => toggleSection('valueRange')}
             >
@@ -320,6 +337,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="String-based"
               count={countFor('stringBased')}
+              issueLevel={sectionIssueLevel('stringBased')}
               isOpen={openSection === 'stringBased'}
               onToggle={() => toggleSection('stringBased')}
             >
@@ -363,6 +381,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="Shape-based"
               count={countFor('shapeBased')}
+              issueLevel={sectionIssueLevel('shapeBased')}
               isOpen={openSection === 'shapeBased'}
               onToggle={() => toggleSection('shapeBased')}
             >
@@ -405,6 +424,7 @@ export function Step4Constraints({ state, update }: Props) {
             <AccordionSection
               title="Other"
               count={countFor('other')}
+              issueLevel={sectionIssueLevel('other')}
               isOpen={openSection === 'other'}
               onToggle={() => toggleSection('other')}
             >
@@ -423,6 +443,35 @@ export function Step4Constraints({ state, update }: Props) {
             </AccordionSection>
 
           </div>
+
+          {/* Cross-field warnings (Phase 0.5) — informational, never blocking */}
+          {issues.length > 0 && (
+            <div className="space-y-1.5">
+              {issues.map((issue, idx) => (
+                <div
+                  key={`${issue.id}-${idx}`}
+                  className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs border
+                    ${issue.level === 'contradiction'
+                      ? 'bg-red-50 border-red-200 text-red-700'
+                      : 'bg-amber-50 border-amber-200 text-amber-700'}
+                  `}
+                >
+                  <span className="mt-px shrink-0" aria-hidden="true">
+                    {issue.level === 'contradiction' ? '⚠' : 'ⓘ'}
+                  </span>
+                  <span className="flex-1 leading-snug">
+                    <span className="font-semibold">
+                      {issue.level === 'contradiction' ? 'Contradiction: ' : 'Redundant: '}
+                    </span>
+                    {issue.message}
+                  </span>
+                  <InfoTip align="right" placement="top" className="lowercase shrink-0">
+                    {issue.why}
+                  </InfoTip>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Active constraint badges */}
           {Object.keys(draft).length > 0 && (
@@ -469,15 +518,17 @@ export function Step4Constraints({ state, update }: Props) {
 function AccordionSection({
   title,
   count,
+  issueLevel,
   isOpen,
   onToggle,
   children,
 }: {
-  title:    string
-  count:    number
-  isOpen:   boolean
-  onToggle: () => void
-  children: React.ReactNode
+  title:      string
+  count:      number
+  issueLevel: IssueLevel | null
+  isOpen:     boolean
+  onToggle:   () => void
+  children:   React.ReactNode
 }) {
   return (
     <div className="border border-zinc-200 rounded-xl overflow-hidden">
@@ -489,7 +540,22 @@ function AccordionSection({
           ${isOpen ? 'bg-zinc-50' : 'bg-white hover:bg-zinc-50'}
         `}
       >
-        <span className="text-sm font-semibold text-zinc-800">{title}</span>
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-800">
+          {title}
+          {issueLevel && (
+            <span
+              className={`inline-block w-1.5 h-1.5 rounded-full
+                ${issueLevel === 'contradiction' ? 'bg-red-500' : 'bg-amber-500'}
+              `}
+              title={issueLevel === 'contradiction'
+                ? 'This section has a contradictory combination'
+                : 'This section has a redundant combination'}
+              aria-label={issueLevel === 'contradiction'
+                ? 'contradiction in this section'
+                : 'redundant combination in this section'}
+            />
+          )}
+        </span>
         <span className="flex items-center gap-2">
           {count > 0 && (
             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5 leading-none">

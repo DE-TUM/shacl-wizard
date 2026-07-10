@@ -253,6 +253,20 @@ export function Step4Constraints({ state, update }: Props) {
                   </p>
                 )}
               </ConstraintSection>
+
+              {/* sh:class */}
+              <ConstraintSection
+                label="Must the value be an instance of a class? (sh:class)"
+                info="sh:class requires each value to be a resource that has rdf:type the given class (directly or via a subclass). Use it for links to typed resources, e.g. every author must be a foaf:Person."
+              >
+                <input
+                  type="text"
+                  value={draft.class ?? ''}
+                  onChange={e => patchDraft({ class: e.target.value || undefined })}
+                  placeholder={`e.g. ${pfx}:Person or foaf:Person`}
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
+              </ConstraintSection>
             </AccordionSection>
 
             {/* ── Cardinality ── */}
@@ -331,6 +345,20 @@ export function Step4Constraints({ state, update }: Props) {
                     info="sh:maxInclusive means the value must be this number or lower."
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <NumberInput
+                    label="Min value > (exclusive)"
+                    value={draft.minExclusive}
+                    onChange={v => patchDraft({ minExclusive: v })}
+                    info="sh:minExclusive means the value must be strictly greater than this number."
+                  />
+                  <NumberInput
+                    label="Max value < (exclusive)"
+                    value={draft.maxExclusive}
+                    onChange={v => patchDraft({ maxExclusive: v })}
+                    info="sh:maxExclusive means the value must be strictly less than this number."
+                  />
+                </div>
               </ConstraintSection>
             </AccordionSection>
 
@@ -375,6 +403,40 @@ export function Step4Constraints({ state, update }: Props) {
                     info="sh:maxLength is the most characters the value may contain."
                   />
                 </div>
+              </ConstraintSection>
+
+              {/* sh:languageIn */}
+              <ConstraintSection
+                label="Which languages are allowed? (sh:languageIn)"
+                info="sh:languageIn restricts language-tagged text to the listed language tags, e.g. only English and German labels. It applies to literals with a language tag."
+              >
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {['en', 'de', 'fr', 'es', 'it'].map(tag => {
+                    const tags = (draft.languageIn ?? '').split(',').map(t => t.trim()).filter(Boolean)
+                    const active = tags.includes(tag)
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          const next = active ? tags.filter(t => t !== tag) : [...tags, tag]
+                          patchDraft({ languageIn: next.length ? next.join(', ') : undefined })
+                        }}
+                        className={`text-[11px] px-3 py-1 rounded-full border transition-colors
+                          ${active ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        `}
+                      >
+                        {tag}
+                      </button>
+                    )
+                  })}
+                </div>
+                <input
+                  type="text"
+                  value={draft.languageIn ?? ''}
+                  onChange={e => patchDraft({ languageIn: e.target.value || undefined })}
+                  placeholder="Comma-separated tags: en, de, fr"
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
               </ConstraintSection>
             </AccordionSection>
 

@@ -1,10 +1,10 @@
 /**
- * App.tsx — root of the SHACL Wizard.
+ * App.tsx - root of the SHACL Wizard.
  *
  * Owns the top-level wizard state and decides which screen/step to render.
  * All state mutations flow downward via a single `update()` helper.
  *
- * Screen routing (simple — no React Router needed):
+ * Screen routing (simple - no React Router needed):
  *   state.mode === ''       → ModeSelect (landing)
  *   state.mode === 'upload' && !uploadedFileName → UploadScreen
  *   otherwise               → Wizard card (steps 0–4)
@@ -33,7 +33,7 @@ function canAdvance(state: WizardState): boolean {
     case 1: return !!state.shapeName.trim()
     case 2: return state.properties.length > 0
     case 3: return true   // constraints are optional; user can always proceed
-    case 4: return false  // last step — no "Next"
+    case 4: return false  // last step - no "Next"
     default: return false
   }
 }

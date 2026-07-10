@@ -170,7 +170,7 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
         </p>
       </div>
 
-      {/* Node-shape-level sh:message — an annotation shown in the validation
+      {/* Node-shape-level sh:message - an annotation shown in the validation
           report, NOT one of the 28 SHACL Core constraints. */}
       <div className="space-y-1.5">
         <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
@@ -203,7 +203,7 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
               </InfoTip>
             </span>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Describe your data in plain English — AI will suggest properties and constraints.
+              Describe your data in plain English - AI will suggest properties and constraints.
             </p>
           </div>
           <button

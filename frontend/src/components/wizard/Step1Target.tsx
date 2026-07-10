@@ -1,4 +1,4 @@
-// Step 1 — Target declaration.
+// Step 1 - Target declaration.
 // The user picks what kind of resources they want to validate and names them.
 
 import { useState } from 'react'
@@ -186,7 +186,7 @@ export function Step1Target({ state, update }: Props) {
         </p>
       </div>
 
-      {/* Pending node refs — shown above target type cards so they're immediately visible */}
+      {/* Pending node refs - shown above target type cards so they're immediately visible */}
       {state.pendingNodeRefs.length > 0 && (
         <div className="space-y-1.5 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
           <p className="text-[11px] text-emerald-700 font-medium uppercase tracking-wider flex items-center gap-1.5">
@@ -239,7 +239,7 @@ export function Step1Target({ state, update }: Props) {
         ))}
       </div>
 
-      {/* Value input — shown once a type is selected */}
+      {/* Value input - shown once a type is selected */}
       {state.targetType && (
         <div className="space-y-1.5 fade-up">
           <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">

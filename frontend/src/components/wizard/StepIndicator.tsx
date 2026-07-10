@@ -1,4 +1,4 @@
-// Step indicator component — the progress bar + numbered circles at the top
+// Step indicator component - the progress bar + numbered circles at the top
 // of every wizard step.
 
 interface StepIndicatorProps {

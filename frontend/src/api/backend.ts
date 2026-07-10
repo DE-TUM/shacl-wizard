@@ -83,7 +83,7 @@ export function suggestProperties(
 }
 
 export function generateShapes(state: WizardState): Promise<GenerateResponse> {
-  // state already contains completedShapes — serialising the whole object is intentional
+  // state already contains completedShapes - serialising the whole object is intentional
   return requestJson<GenerateResponse>('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -91,7 +91,7 @@ export function generateShapes(state: WizardState): Promise<GenerateResponse> {
   })
 }
 
-const RDF_PARSE_TIMEOUT_MS = 600_000 // 10 minutes — matches backend Jena timeout
+const RDF_PARSE_TIMEOUT_MS = 600_000 // 10 minutes - matches backend Jena timeout
 
 export function parseRdfFile(file: File): Promise<ParseResponse> {
   const formData = new FormData()

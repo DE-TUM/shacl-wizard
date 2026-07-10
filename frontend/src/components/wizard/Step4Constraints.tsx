@@ -1,4 +1,4 @@
-// Step 4 — Constraint configuration.
+// Step 4 - Constraint configuration.
 // For each property added in Step 3, the user defines what constraints apply.
 // The panel on the left shows property pills; clicking one opens the constraint
 // editor for that property on the right.
@@ -71,7 +71,7 @@ export function Step4Constraints({ state, update }: Props) {
   const countFor = (id: string) =>
     CATEGORY_KEYS[id].filter(k => isSet(draft[k])).length
 
-  // Cross-field validation (Phase 0.5). Warns but never blocks — SHACL permits
+  // Cross-field validation (Phase 0.5). Warns but never blocks - SHACL permits
   // writing an unsatisfiable shape. ownPath enables the property-pair self-
   // reference checks (C13/R5).
   const issues = detectConstraintIssues(draft, activeProperty?.path)
@@ -177,7 +177,7 @@ export function Step4Constraints({ state, update }: Props) {
             >
               {prop.path}
               {(() => {
-                // Count only validating constraints — sh:message is an annotation.
+                // Count only validating constraints - sh:message is an annotation.
                 const count = Object.entries(prop.constraints).filter(
                   ([k, v]) => k !== 'message' && v !== null && v !== undefined && v !== ''
                 ).length
@@ -230,7 +230,7 @@ export function Step4Constraints({ state, update }: Props) {
             </InfoTip>
           </div>
 
-          {/* ── Constraint accordion — one open section at a time ── */}
+          {/* ── Constraint accordion - one open section at a time ── */}
           <div className="space-y-2">
 
             {/* ── Value Type ── */}
@@ -608,11 +608,11 @@ export function Step4Constraints({ state, update }: Props) {
                     {logicalMode === 'or' && 'A value passes if it satisfies at least one of the conditions below.'}
                     {logicalMode === 'xone' && 'A value passes only if it satisfies exactly one of the conditions below (no more, no less).'}
                     {logicalMode === 'not' && 'A value passes only if it does NOT satisfy the condition below.'}
-                    {logicalMode === 'qualified' && 'Describe a condition, then require how many of this property’s values must match it (min/max).'}
+                    {logicalMode === 'qualified' && 'Describe a condition, then require how many values must match it (a min and/or max count).'}
                   </p>
                 )}
 
-                {/* AND / OR / XONE — a list of condition groups */}
+                {/* AND / OR / XONE - a list of condition groups */}
                 {listKey && (
                   <div className="space-y-2">
                     {(draft[listKey] ?? []).map((group, i) => (
@@ -635,7 +635,7 @@ export function Step4Constraints({ state, update }: Props) {
                   </div>
                 )}
 
-                {/* NOT — a single negated condition */}
+                {/* NOT - a single negated condition */}
                 {logicalMode === 'not' && (
                   <SubShapeEditor
                     title="Value must NOT match"
@@ -651,7 +651,7 @@ export function Step4Constraints({ state, update }: Props) {
                   <div className="space-y-2">
                     <SubShapeEditor
                       title="Values matching this condition"
-                      info="Describe the values you want to count. Then, below, require how many of this property’s values must match — e.g. “at least 2 values that are ex:Manager”."
+                      info="Describe the values you want to count. Then, below, require how many values must match, for example at least 2 values that are ex:Manager."
                       value={draft.qualifiedValueShape ?? {}}
                       onChange={patch => updateSingle('qualifiedValueShape', patch)}
                       pfx={pfx}
@@ -661,13 +661,13 @@ export function Step4Constraints({ state, update }: Props) {
                         label="Qualified min count"
                         value={draft.qualifiedMinCount}
                         onChange={v => patchDraft({ qualifiedMinCount: v })}
-                        info="sh:qualifiedMinCount — the fewest values that must match the condition above."
+                        info="sh:qualifiedMinCount - the fewest values that must match the condition above."
                       />
                       <NumberInput
                         label="Qualified max count"
                         value={draft.qualifiedMaxCount}
                         onChange={v => patchDraft({ qualifiedMaxCount: v })}
-                        info="sh:qualifiedMaxCount — the most values that may match the condition above."
+                        info="sh:qualifiedMaxCount - the most values that may match the condition above."
                       />
                     </div>
                   </div>
@@ -685,7 +685,7 @@ export function Step4Constraints({ state, update }: Props) {
             >
               <ConstraintSection
                 label="Must the value conform to another shape? (sh:node)"
-                info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes — e.g. every worksFor value must match UniversityShape."
+                info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes - e.g. every worksFor value must match UniversityShape."
               >
                 {state.completedShapes.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -756,7 +756,7 @@ export function Step4Constraints({ state, update }: Props) {
 
           </div>
 
-          {/* sh:message — a validation-report annotation, NOT one of the 28
+          {/* sh:message - a validation-report annotation, NOT one of the 28
               SHACL Core constraints. Kept outside the constraint accordion. */}
           <div className="rounded-xl border border-zinc-200 p-3 space-y-1.5">
             <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -776,7 +776,7 @@ export function Step4Constraints({ state, update }: Props) {
             />
           </div>
 
-          {/* Cross-field warnings (Phase 0.5) — informational, never blocking */}
+          {/* Cross-field warnings (Phase 0.5) - informational, never blocking */}
           {issues.length > 0 && (
             <div className="space-y-1.5">
               {issues.map((issue, idx) => (
@@ -802,7 +802,7 @@ export function Step4Constraints({ state, update }: Props) {
             </div>
           )}
 
-          {/* Active constraint badges — scalar constraints only. The sh:message
+          {/* Active constraint badges - scalar constraints only. The sh:message
               annotation and the nested logical sub-shapes render in their own
               sections, not as badges. */}
           {Object.entries(draft).some(([k, v]) => k !== 'message' && typeof v === 'string' && v) && (
@@ -850,7 +850,7 @@ export function Step4Constraints({ state, update }: Props) {
               Close this shape
               <InfoTip align="left" placement="top">
                 sh:closed true means a node may only use the property paths declared
-                in this shape — any other property makes it invalid. This applies to
+                in this shape - any other property makes it invalid. This applies to
                 the whole shape, not one property.
               </InfoTip>
             </p>
@@ -880,7 +880,7 @@ export function Step4Constraints({ state, update }: Props) {
               Also allow these extra properties (optional)
               <InfoTip align="left" placement="top" className="lowercase">
                 sh:ignoredProperties lists predicates still permitted even when the
-                shape is closed — commonly rdf:type.
+                shape is closed - commonly rdf:type.
               </InfoTip>
             </label>
             <input
@@ -1019,14 +1019,14 @@ function SubShapeEditor({ title, info, value, onChange, onRemove, pfx }: {
         )}
       </div>
 
-      <p className="text-[10px] text-zinc-400">Fill only the rules you need — blank fields are ignored.</p>
+      <p className="text-[10px] text-zinc-400">Fill only the rules you need - blank fields are ignored.</p>
 
       {/* datatype */}
       <div className="space-y-1">
         <p className="text-[10px] text-zinc-400 flex items-center gap-1.5">
           Value type
           <InfoTip align="left" placement="top" className="lowercase">
-            The kind of literal the value must be — text, a number, a date, and so on. Leave unset to allow any type.
+            The kind of literal the value must be - text, a number, a date, and so on. Leave unset to allow any type.
           </InfoTip>
         </p>
         <div className="flex flex-wrap gap-1">
@@ -1137,7 +1137,7 @@ function PropertyPairSelect({ label, info, value, options, onChange }: {
         onChange={e => onChange(e.target.value || undefined)}
         className="w-full h-8 px-2 rounded-md border border-zinc-200 text-sm mono bg-white focus:outline-none focus:border-zinc-400"
       >
-        <option value="">— none —</option>
+        <option value="">none</option>
         {options.map(opt => (
           <option key={opt} value={opt}>{opt}</option>
         ))}

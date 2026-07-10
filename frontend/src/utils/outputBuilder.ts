@@ -182,12 +182,12 @@ function buildShapeBlock(shape: ShapeSource, prefix: string): string[] {
     lines.push(`    ${map[shape.targetType] ?? 'sh:targetClass'} ${p(shape.targetValue)} ;`)
   }
 
-  // sh:message on the NodeShape — annotation only, not a validating constraint.
+  // sh:message on the NodeShape - annotation only, not a validating constraint.
   if (shape.shapeMessage && shape.shapeMessage.trim()) {
     lines.push(`    sh:message "${ttlEscape(shape.shapeMessage.trim())}" ;`)
   }
 
-  // sh:closed (+ sh:ignoredProperties) — NodeShape-level.
+  // sh:closed (+ sh:ignoredProperties) - NodeShape-level.
   if (shape.closed) {
     lines.push('    sh:closed true ;')
     const ignored = (shape.ignoredProperties ?? '').split(',').map(s => s.trim()).filter(Boolean)
@@ -287,7 +287,7 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
   if (c.disjoint)         lines.push(`        sh:disjoint ${p(c.disjoint)} ;`)
   if (c.lessThan)         lines.push(`        sh:lessThan ${p(c.lessThan)} ;`)
   if (c.lessThanOrEquals) lines.push(`        sh:lessThanOrEquals ${p(c.lessThanOrEquals)} ;`)
-  // Logical / qualified constraints (Phase 5) — one level of nested sub-shapes.
+  // Logical / qualified constraints (Phase 5) - one level of nested sub-shapes.
   const logicalList = (groups: SubShape[] | undefined): string =>
     (groups ?? []).map(g => subShapeInline(g, prefix)).join(' ')
   if (c.and && c.and.length)   lines.push(`        sh:and ( ${logicalList(c.and)} ) ;`)
@@ -299,7 +299,7 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
     if (c.qualifiedMinCount) lines.push(`        sh:qualifiedMinCount ${c.qualifiedMinCount} ;`)
     if (c.qualifiedMaxCount) lines.push(`        sh:qualifiedMaxCount ${c.qualifiedMaxCount} ;`)
   }
-  // sh:message — annotation only, not a validating constraint.
+  // sh:message - annotation only, not a validating constraint.
   if (c.message) lines.push(`        sh:message "${ttlEscape(c.message)}" ;`)
   return lines
 }

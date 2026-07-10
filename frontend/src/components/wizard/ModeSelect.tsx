@@ -48,7 +48,7 @@ export function ModeSelect({ update }: Props) {
                 </InfoTip>
               </div>
               <div className="text-xs text-zinc-500 mt-0.5">
-                Start from scratch — the wizard asks everything step by step.
+                Start from scratch - the wizard asks everything step by step.
               </div>
             </div>
             <span className="ml-auto text-zinc-300 group-hover:text-zinc-600 transition-colors text-lg">→</span>
@@ -69,7 +69,7 @@ export function ModeSelect({ update }: Props) {
                 </InfoTip>
               </div>
               <div className="text-xs text-zinc-500 mt-0.5">
-                Upload an RDF file — classes and properties are pre-filled for you.
+                Upload an RDF file - classes and properties are pre-filled for you.
               </div>
             </div>
             <span className="ml-auto text-zinc-300 group-hover:text-zinc-600 transition-colors text-lg">→</span>

@@ -8,7 +8,7 @@ interface Props {
   onBack: () => void
 }
 
-// Vocabulary prefixes that belong to fixed external namespaces — never use these
+// Vocabulary prefixes that belong to fixed external namespaces - never use these
 // as the "data namespace" for generating shapes.
 const WELL_KNOWN_PREFIXES = new Set([
   'rdf', 'rdfs', 'owl', 'xsd', 'sh', 'shacl',
@@ -165,7 +165,7 @@ export function UploadScreen({ update, onBack }: Props) {
         <p className="text-[10px] text-zinc-400 mt-1">Click outside the text area after pasting.</p>
       </div>
 
-      {/* Bottom nav — matches manual mode layout */}
+      {/* Bottom nav - matches manual mode layout */}
       <div className="flex justify-between items-center px-6 py-4 border-t border-zinc-100 bg-zinc-50/50 -mx-6 -mb-6 mt-2 rounded-b-2xl">
         <button onClick={onBack} className="text-zinc-500 text-sm px-3 py-2 rounded hover:bg-zinc-100 transition-colors">
           ← Change mode

@@ -1,7 +1,7 @@
 // Cross-field validation for the Step 4 constraint editor.
 //
 // SHACL does not forbid writing an unsatisfiable shape, so these checks NEVER
-// block the user — they only surface a warning explaining why a combination can
+// block the user - they only surface a warning explaining why a combination can
 // never be satisfied (or is redundant). The audit behind this lives in the
 // project's Phase 0.5 notes; each case is tagged with its audit id (C#/R#).
 //
@@ -108,14 +108,14 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
     issues.push({
       id: 'C4', level: 'contradiction', fields: ['datatype', 'nodeKind'],
       message: 'datatype requires a literal but nodeKind is IRI',
-      why: 'A datatype only applies to literal values, but sh:nodeKind sh:IRI requires the value to be an IRI — a term cannot be both.',
+      why: 'A datatype only applies to literal values, but sh:nodeKind sh:IRI requires the value to be an IRI - a term cannot be both.',
     })
   }
   if (c.datatype && nk === 'BlankNode') {
     issues.push({
       id: 'C5', level: 'contradiction', fields: ['datatype', 'nodeKind'],
       message: 'datatype requires a literal but nodeKind is Blank node',
-      why: 'A datatype only applies to literal values, but sh:nodeKind sh:BlankNode requires a blank node — a term cannot be both.',
+      why: 'A datatype only applies to literal values, but sh:nodeKind sh:BlankNode requires a blank node - a term cannot be both.',
     })
   }
 
@@ -124,7 +124,7 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
     issues.push({
       id: 'C6', level: 'contradiction', fields: ['class', 'datatype'],
       message: 'class requires a resource but datatype requires a literal',
-      why: 'sh:class requires the value to be a class instance (a resource), while sh:datatype requires it to be a literal — no value is both.',
+      why: 'sh:class requires the value to be a class instance (a resource), while sh:datatype requires it to be a literal - no value is both.',
     })
   }
   if (c.class && nk === 'Literal') {
@@ -176,7 +176,7 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
       issues.push({
         id: 'C9', level: 'contradiction', fields: ['hasValue', 'in'],
         message: `hasValue "${c.hasValue.trim()}" is not in the allowed list`,
-        why: 'sh:hasValue requires this exact value to be present, but sh:in forbids any value outside its list — so the mandatory value is itself disallowed.',
+        why: 'sh:hasValue requires this exact value to be present, but sh:in forbids any value outside its list - so the mandatory value is itself disallowed.',
       })
     }
   }
@@ -233,7 +233,7 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
           })
         }
       } catch {
-        // Invalid regex — skip; the pattern field itself is the user's concern.
+        // Invalid regex - skip; the pattern field itself is the user's concern.
       }
     }
   }
@@ -302,7 +302,7 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
       why: 'Every value is less than or equal to itself, so this constraint is trivially satisfied and has no effect.',
     })
   }
-  // R6 (new in Phase 4): lessThan & disjoint on the same target — disjoint is
+  // R6 (new in Phase 4): lessThan & disjoint on the same target - disjoint is
   // implied by lessThan (a<b means a≠b), so it is redundant.
   if (samePath(c.lessThan, c.disjoint)) {
     issues.push({
@@ -311,7 +311,7 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
       why: 'sh:lessThan already guarantees the values differ from the target, so sh:disjoint on the same property adds nothing.',
     })
   }
-  // R7 (new in Phase 4): equals & lessThanOrEquals on the same target — implied
+  // R7 (new in Phase 4): equals & lessThanOrEquals on the same target - implied
   // by equals (a=b means a≤b), so lessThanOrEquals is redundant.
   if (samePath(c.equals, c.lessThanOrEquals)) {
     issues.push({

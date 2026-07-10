@@ -110,12 +110,12 @@ export function Step5Output({ state, update, completedShapes }: Props) {
         {[
           {
             label: 'Shape',
-            value: state.shapeName || '—',
+            value: state.shapeName || '-',
             info: 'The named NodeShape that groups these validation rules.',
           },
           {
             label: 'Target',
-            value: state.targetValue ? `ex:${state.targetValue}` : '—',
+            value: state.targetValue ? `ex:${state.targetValue}` : '-',
             info: 'The nodes in the data graph that this shape will validate.',
           },
           {
@@ -180,7 +180,7 @@ export function Step5Output({ state, update, completedShapes }: Props) {
         </div>
       </div>
 
-      {/* Code area — loading dots while backend is generating */}
+      {/* Code area - loading dots while backend is generating */}
       {generating ? (
         <div className="bg-zinc-950 rounded-xl flex justify-center items-center min-h-[140px]">
           <span className="flex gap-1.5">
@@ -199,7 +199,7 @@ export function Step5Output({ state, update, completedShapes }: Props) {
 
       {!generating && generateError && (
         <p className="text-xs text-zinc-400">
-          Backend unavailable — showing client-side preview
+          Backend unavailable - showing client-side preview
         </p>
       )}
 

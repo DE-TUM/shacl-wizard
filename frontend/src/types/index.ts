@@ -32,7 +32,7 @@ export const TARGET_OPTIONS = [
 // ─── Constraint types ─────────────────────────────────────────────────────────
 
 // A one-level nested shape used inside a logical / qualified constraint.
-// Value-level constraints only — no path, no cardinality, no further nesting.
+// Value-level constraints only - no path, no cardinality, no further nesting.
 export interface SubShape {
   datatype?:     string
   nodeKind?:     string
@@ -64,11 +64,11 @@ export interface PropertyConstraints {
   maxLength?:    string
   in?:           string   // comma-separated list of allowed values
   class?:        string   // sh:class constraint
-  node?:         string   // sh:node — references another NodeShape by local name or CURIE
+  node?:         string   // sh:node - references another NodeShape by local name or CURIE
   languageIn?:   string   // comma-separated language tags
-  hasValue?:     string   // sh:hasValue — a value the property must include
-  uniqueLang?:   string   // sh:uniqueLang — 'true' when enabled
-  // Property-pair constraints — each references another property path in the shape
+  hasValue?:     string   // sh:hasValue - a value the property must include
+  uniqueLang?:   string   // sh:uniqueLang - 'true' when enabled
+  // Property-pair constraints - each references another property path in the shape
   equals?:           string
   disjoint?:         string
   lessThan?:         string
@@ -81,7 +81,7 @@ export interface PropertyConstraints {
   qualifiedValueShape?: SubShape
   qualifiedMinCount?:   string
   qualifiedMaxCount?:   string
-  // sh:message — a human-readable annotation for the validation report, NOT one
+  // sh:message - a human-readable annotation for the validation report, NOT one
   // of the 28 SHACL Core constraint components. Never counted toward coverage.
   message?:      string
 }
@@ -98,7 +98,7 @@ export interface CompletedShape {
   targetValue:  string
   properties:   PropertyShape[]
   shapeMessage?: string        // optional sh:message annotation for the whole shape
-  closed?:      boolean        // sh:closed — only declared properties allowed
+  closed?:      boolean        // sh:closed - only declared properties allowed
   ignoredProperties?: string   // comma-separated extra paths permitted when closed
 }
 
@@ -115,7 +115,7 @@ export interface WizardState {
   targetValue:          string
   shapeName:            string
   shapeMessage:         string        // optional sh:message annotation for the NodeShape
-  closed:               boolean       // sh:closed — only declared properties allowed
+  closed:               boolean       // sh:closed - only declared properties allowed
   ignoredProperties:    string        // comma-separated extra paths permitted when closed
   properties:           PropertyShape[]
   nlDescription:        string
@@ -132,7 +132,7 @@ export interface WizardState {
   detectedPrefixes:     Record<string, string>   // from uploaded file, e.g. { ub: 'http://...' }
   selectedPrefix:       string                   // e.g. 'ub'
   selectedNamespace:    string                   // e.g. 'http://swat.cse.lehigh.edu/onto/univ-bench.owl#'
-  // sh:node refs from the previous shape that don't yet have a completed shape —
+  // sh:node refs from the previous shape that don't yet have a completed shape -
   // shown as quick-pick suggestions in Step 1 of the next shape
   pendingNodeRefs:      string[]
 }

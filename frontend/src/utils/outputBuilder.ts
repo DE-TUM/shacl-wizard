@@ -65,6 +65,8 @@ type ShapeSource = {
   targetValue:  string
   properties:   PropertyShape[]
   shapeMessage?: string
+  closed?:      boolean
+  ignoredProperties?: string
 }
 
 type PrefixInfo = {
@@ -91,6 +93,8 @@ function toShapeSource(s: CompletedShape | WizardState): ShapeSource {
     targetValue:  s.targetValue,
     properties:   s.properties,
     shapeMessage: s.shapeMessage,
+    closed:       s.closed,
+    ignoredProperties: s.ignoredProperties,
   }
 }
 
@@ -118,6 +122,9 @@ function extraPrefixLines(
   }
 
   for (const shape of shapes) {
+    if (shape.ignoredProperties) {
+      shape.ignoredProperties.split(',').forEach(p => scan(p.trim()))
+    }
     for (const prop of shape.properties) {
       scan(prop.path)
       const c = prop.constraints
@@ -176,6 +183,15 @@ function buildShapeBlock(shape: ShapeSource, prefix: string): string[] {
     lines.push(`    sh:message "${ttlEscape(shape.shapeMessage.trim())}" ;`)
   }
 
+  // sh:closed (+ sh:ignoredProperties) — NodeShape-level.
+  if (shape.closed) {
+    lines.push('    sh:closed true ;')
+    const ignored = (shape.ignoredProperties ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    if (ignored.length > 0) {
+      lines.push(`    sh:ignoredProperties ( ${ignored.map(p => p.includes(':') ? p : `${prefix}:${p}`).join(' ')} ) ;`)
+    }
+  }
+
   shape.properties.forEach((prop, idx) => {
     const isLast = idx === shape.properties.length - 1
     lines.push('    sh:property [')
@@ -220,6 +236,8 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
     const tags = c.languageIn.split(',').map((t: string) => `"${t.trim()}"`).join(' ')
     lines.push(`        sh:languageIn ( ${tags} ) ;`)
   }
+  if (c.hasValue)   lines.push(`        sh:hasValue "${ttlEscape(c.hasValue)}" ;`)
+  if (c.uniqueLang === 'true') lines.push('        sh:uniqueLang true ;')
   // sh:message — annotation only, not a validating constraint.
   if (c.message) lines.push(`        sh:message "${ttlEscape(c.message)}" ;`)
   return lines
@@ -279,6 +297,14 @@ function buildJsonLdShapeObj(shape: ShapeSource, prefix: string): Record<string,
     obj['sh:message'] = shape.shapeMessage.trim()
   }
 
+  if (shape.closed) {
+    obj['sh:closed'] = { '@value': true, '@type': 'xsd:boolean' }
+    const ignored = (shape.ignoredProperties ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    if (ignored.length > 0) {
+      obj['sh:ignoredProperties'] = { '@list': ignored.map(p => ({ '@id': p.includes(':') ? p : `${prefix}:${p}` })) }
+    }
+  }
+
   obj['sh:property'] = shape.properties.map(prop => buildJsonLdProperty(prop, prefix))
   return obj
 }
@@ -312,6 +338,8 @@ function buildJsonLdProperty(prop: PropertyShape, prefix: string): Record<string
   if (c.languageIn) {
     obj['sh:languageIn'] = { '@list': c.languageIn.split(',').map((t: string) => t.trim()) }
   }
+  if (c.hasValue) obj['sh:hasValue'] = c.hasValue
+  if (c.uniqueLang === 'true') obj['sh:uniqueLang'] = { '@value': true, '@type': 'xsd:boolean' }
   if (c.message) obj['sh:message'] = c.message
 
   return obj
@@ -383,6 +411,16 @@ export function buildRdfXml(state: WizardState, completedShapes: CompletedShape[
       lines.push(`    <sh:message>${xmlEscape(shape.shapeMessage.trim())}</sh:message>`)
     }
 
+    if (shape.closed) {
+      lines.push('    <sh:closed rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</sh:closed>')
+      const ignored = (shape.ignoredProperties ?? '').split(',').map(s => s.trim()).filter(Boolean)
+      if (ignored.length > 0) {
+        lines.push('    <sh:ignoredProperties rdf:parseType="Collection">')
+        for (const p of ignored) lines.push(`      <rdf:Description rdf:about="${toUri(p)}"/>`)
+        lines.push('    </sh:ignoredProperties>')
+      }
+    }
+
     for (const prop of shape.properties) {
       const c = prop.constraints
       lines.push('    <sh:property>')
@@ -398,6 +436,8 @@ export function buildRdfXml(state: WizardState, completedShapes: CompletedShape[
       if (c.maxInclusive) lines.push(`        <sh:maxInclusive>${c.maxInclusive}</sh:maxInclusive>`)
       if (c.minLength)    lines.push(`        <sh:minLength rdf:datatype="xsd:integer">${c.minLength}</sh:minLength>`)
       if (c.maxLength)    lines.push(`        <sh:maxLength rdf:datatype="xsd:integer">${c.maxLength}</sh:maxLength>`)
+      if (c.hasValue)     lines.push(`        <sh:hasValue>${xmlEscape(c.hasValue)}</sh:hasValue>`)
+      if (c.uniqueLang === 'true') lines.push('        <sh:uniqueLang rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</sh:uniqueLang>')
       lines.push('      </sh:PropertyShape>')
       lines.push('    </sh:property>')
     }

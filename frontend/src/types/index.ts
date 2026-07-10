@@ -47,6 +47,8 @@ export interface PropertyConstraints {
   class?:        string   // sh:class constraint
   node?:         string   // sh:node — references another NodeShape by local name or CURIE
   languageIn?:   string   // comma-separated language tags
+  hasValue?:     string   // sh:hasValue — a value the property must include
+  uniqueLang?:   string   // sh:uniqueLang — 'true' when enabled
   // sh:message — a human-readable annotation for the validation report, NOT one
   // of the 28 SHACL Core constraint components. Never counted toward coverage.
   message?:      string
@@ -63,7 +65,9 @@ export interface CompletedShape {
   targetType:   TargetType
   targetValue:  string
   properties:   PropertyShape[]
-  shapeMessage?: string   // optional sh:message annotation for the whole shape
+  shapeMessage?: string        // optional sh:message annotation for the whole shape
+  closed?:      boolean        // sh:closed — only declared properties allowed
+  ignoredProperties?: string   // comma-separated extra paths permitted when closed
 }
 
 // ─── Input mode ───────────────────────────────────────────────────────────────
@@ -79,6 +83,8 @@ export interface WizardState {
   targetValue:          string
   shapeName:            string
   shapeMessage:         string        // optional sh:message annotation for the NodeShape
+  closed:               boolean       // sh:closed — only declared properties allowed
+  ignoredProperties:    string        // comma-separated extra paths permitted when closed
   properties:           PropertyShape[]
   nlDescription:        string
   useNL:                boolean
@@ -106,6 +112,8 @@ export const INITIAL_STATE: WizardState = {
   targetValue:          '',
   shapeName:            '',
   shapeMessage:         '',
+  closed:               false,
+  ignoredProperties:    '',
   properties:           [],
   nlDescription:        '',
   useNL:                false,

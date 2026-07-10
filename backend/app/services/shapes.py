@@ -34,12 +34,12 @@ def build_shapes_graph(state: WizardState, base_uri: str, prefix: str = "ex") ->
     for cs in state.completed_shapes:
         _add_shape_to_graph(
             graph, cs.shape_name, cs.target_type, cs.target_value, cs.properties, base_uri, prefix, detected,
-            shape_message=cs.shape_message,
+            shape_message=cs.shape_message, closed=cs.closed, ignored_properties=cs.ignored_properties,
         )
 
     shape_uri = _add_shape_to_graph(
         graph, state.shape_name, state.target_type, state.target_value, state.properties, base_uri, prefix, detected,
-        shape_message=state.shape_message,
+        shape_message=state.shape_message, closed=state.closed, ignored_properties=state.ignored_properties,
     )
     return graph, str(shape_uri)
 
@@ -54,6 +54,8 @@ def _add_shape_to_graph(
     prefix: str = "ex",
     detected_prefixes: dict[str, str] | None = None,
     shape_message: str = "",
+    closed: bool = False,
+    ignored_properties: str = "",
 ) -> URIRef:
     shape = _resource(shape_name, base_uri, prefix, detected_prefixes)
     graph.add((shape, RDF.type, SH.NodeShape))
@@ -72,6 +74,17 @@ def _add_shape_to_graph(
     # coverage goal).
     if shape_message and shape_message.strip():
         graph.add((shape, SH.message, Literal(shape_message.strip())))
+
+    # sh:closed — NodeShape-level: only the declared property paths are allowed.
+    # sh:ignoredProperties lists extra predicates still permitted when closed.
+    if closed:
+        graph.add((shape, SH.closed, Literal(True)))
+        ignored = _split_csv(ignored_properties) if ignored_properties else []
+        if ignored:
+            _add_rdf_list(
+                graph, shape, SH.ignoredProperties,
+                [_resource(path, base_uri, prefix, detected_prefixes) for path in ignored],
+            )
 
     for prop in properties:
         if not prop.path.strip():
@@ -142,6 +155,11 @@ def _add_constraints(
         graph.add((subject, SH.node, _resource(c.node_, base_uri, prefix, detected_prefixes)))
     if c.in_:
         _add_rdf_list(graph, subject, SH["in"], [Literal(item) for item in _split_in_values(c.in_)])
+    if c.has_value:
+        # Matches the sh:in pattern: the value is emitted as a literal.
+        graph.add((subject, SH.hasValue, Literal(c.has_value.strip())))
+    if c.unique_lang and c.unique_lang.strip().lower() == "true":
+        graph.add((subject, SH.uniqueLang, Literal(True)))
     if c.language_in:
         _add_rdf_list(graph, subject, SH.languageIn, [Literal(tag) for tag in _split_csv(c.language_in)])
     # sh:message is a shape-level annotation, NOT one of the 28 SHACL Core

@@ -40,6 +40,8 @@ LLM_SCHEMA: dict[str, Any] = {
                             "class": {"type": "string"},
                             "node": {"type": "string"},
                             "languageIn": {"type": "string"},
+                            "hasValue": {"type": "string"},
+                            "uniqueLang": {"type": "string"},
                             "message": {"type": "string"},
                         },
                     },
@@ -61,7 +63,12 @@ Return JSON matching the schema exactly. Constraint values must be strings
 because the frontend stores wizard input as strings. Only use these constraint
 fields: minCount, maxCount, datatype, nodeKind, pattern, minInclusive,
 maxInclusive, minExclusive, maxExclusive, minLength, maxLength, in, class, node,
-languageIn, message.
+languageIn, hasValue, uniqueLang, message.
+
+"hasValue" is a single required value the property must include (e.g. "must
+have the value 'active'"). "uniqueLang" is the string "true" only when the user
+says each language may appear at most once among the values (e.g. "at most one
+label per language"); otherwise omit it.
 
 "message" is NOT a validating constraint — it is an optional custom
 sh:message string shown in the validation report when this property is

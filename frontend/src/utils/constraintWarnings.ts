@@ -5,16 +5,13 @@
 // never be satisfied (or is redundant). The audit behind this lives in the
 // project's Phase 0.5 notes; each case is tagged with its audit id (C#/R#).
 //
-// New detectors are added as later phases introduce the fields they need
-// (hasValue, equals/disjoint/lessThan[OrEquals], uniqueLang). Deferred cases:
-//   C9  hasValue not in sh:in list                     (Phase 3)
-//   C10 hasValue violates own datatype/range/pattern   (Phase 3)
-//   C11 equals & disjoint on same path                 (Phase 4)
-//   C12 equals & lessThan[OrEquals] on same path       (Phase 4)
-//   C13 lessThan / disjoint referencing own path       (Phase 4)
-//   R2  lessThan & lessThanOrEquals on same path       (Phase 4)
-//   R3  uniqueLang + maxCount 1                         (Phase 3)
-//   R5  equals / lessThanOrEquals on own path          (Phase 4)
+// New detectors are added as later phases introduce the fields they need.
+// Still deferred (fields land in Phase 4):
+//   C11 equals & disjoint on same path
+//   C12 equals & lessThan[OrEquals] on same path
+//   C13 lessThan / disjoint referencing own path
+//   R2  lessThan & lessThanOrEquals on same path
+//   R5  equals / lessThanOrEquals on own path
 
 import type { PropertyConstraints } from '@/types'
 
@@ -169,6 +166,84 @@ export function detectConstraintIssues(c: PropertyConstraints): ConstraintIssue[
       id: 'R4', level: 'redundant', fields: ['languageIn', 'datatype'],
       message: `languageIn with datatype ${c.datatype} is usually a mistake`,
       why: 'Language-tagged strings have the datatype rdf:langString, not ' + c.datatype + ', so this pairing typically excludes every value you meant to allow.',
+    })
+  }
+
+  // ── C9: hasValue not present in the sh:in allowed list ───────────────────
+  if (c.hasValue && c.in) {
+    const list = c.in.split(',').map((v: string) => v.trim()).filter(Boolean)
+    if (list.length > 0 && !list.includes(c.hasValue.trim())) {
+      issues.push({
+        id: 'C9', level: 'contradiction', fields: ['hasValue', 'in'],
+        message: `hasValue "${c.hasValue.trim()}" is not in the allowed list`,
+        why: 'sh:hasValue requires this exact value to be present, but sh:in forbids any value outside its list — so the mandatory value is itself disallowed.',
+      })
+    }
+  }
+
+  // ── C10: hasValue violates the property's own datatype / range / pattern ──
+  if (c.hasValue) {
+    const hv = c.hasValue.trim()
+    const hvNum = num(hv)
+    if (hvNum !== null) {
+      const bad =
+        (num(c.minInclusive) !== null && hvNum < num(c.minInclusive)!) ||
+        (num(c.minExclusive) !== null && hvNum <= num(c.minExclusive)!) ||
+        (num(c.maxInclusive) !== null && hvNum > num(c.maxInclusive)!) ||
+        (num(c.maxExclusive) !== null && hvNum >= num(c.maxExclusive)!)
+      if (bad) {
+        issues.push({
+          id: 'C10', level: 'contradiction', fields: ['hasValue', 'minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'],
+          message: `hasValue ${hv} falls outside the allowed numeric range`,
+          why: 'sh:hasValue requires this exact value, but it lies outside the min/max range set on the same property, so no value can satisfy both.',
+        })
+      }
+    }
+    // datatype mismatch (clear cases only)
+    if (c.datatype === 'xsd:integer' && !/^[+-]?\d+$/.test(hv)) {
+      issues.push({
+        id: 'C10', level: 'contradiction', fields: ['hasValue', 'datatype'],
+        message: `hasValue "${hv}" is not a valid integer`,
+        why: 'sh:hasValue requires this exact value, but it is not a valid xsd:integer, so it can never satisfy the datatype constraint.',
+      })
+    } else if (c.datatype === 'xsd:decimal' && hvNum === null) {
+      issues.push({
+        id: 'C10', level: 'contradiction', fields: ['hasValue', 'datatype'],
+        message: `hasValue "${hv}" is not a valid decimal`,
+        why: 'sh:hasValue requires this exact value, but it is not a valid xsd:decimal number.',
+      })
+    } else if (c.datatype === 'xsd:boolean' && !/^(true|false|0|1)$/.test(hv)) {
+      issues.push({
+        id: 'C10', level: 'contradiction', fields: ['hasValue', 'datatype'],
+        message: `hasValue "${hv}" is not a valid boolean`,
+        why: 'sh:hasValue requires this exact value, but it is not true/false, so it cannot satisfy the xsd:boolean datatype.',
+      })
+    }
+    // pattern mismatch
+    if (c.pattern) {
+      let anchored = c.pattern
+      if (!anchored.startsWith('^')) anchored = '^' + anchored
+      if (!anchored.endsWith('$') || (anchored.length >= 2 && anchored[anchored.length - 2] === '\\')) anchored += '$'
+      try {
+        if (!new RegExp(anchored).test(hv)) {
+          issues.push({
+            id: 'C10', level: 'contradiction', fields: ['hasValue', 'pattern'],
+            message: `hasValue "${hv}" does not match the required pattern`,
+            why: 'sh:hasValue requires this exact value, but it fails the sh:pattern regex on the same property, so no value can satisfy both.',
+          })
+        }
+      } catch {
+        // Invalid regex — skip; the pattern field itself is the user's concern.
+      }
+    }
+  }
+
+  // ── R3: uniqueLang with maxCount 1 ───────────────────────────────────────
+  if (c.uniqueLang === 'true' && num(c.maxCount) === 1) {
+    issues.push({
+      id: 'R3', level: 'redundant', fields: ['uniqueLang', 'maxCount'],
+      message: 'uniqueLang has no effect when maxCount is 1',
+      why: 'sh:uniqueLang only matters when a property can hold several values; with at most one value there can never be a duplicate language tag.',
     })
   }
 

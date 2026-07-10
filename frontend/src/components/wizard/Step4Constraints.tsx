@@ -26,9 +26,9 @@ const CATEGORY_KEYS: Record<string, (keyof PropertyConstraints)[]> = {
   valueType:   ['datatype', 'nodeKind', 'class'],
   cardinality: ['minCount', 'maxCount'],
   valueRange:  ['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'],
-  stringBased: ['pattern', 'minLength', 'maxLength', 'languageIn'],
+  stringBased: ['pattern', 'minLength', 'maxLength', 'languageIn', 'uniqueLang'],
   shapeBased:  ['node'],
-  other:       ['in'],
+  other:       ['in', 'hasValue'],
 }
 
 export function Step4Constraints({ state, update }: Props) {
@@ -438,6 +438,31 @@ export function Step4Constraints({ state, update }: Props) {
                   className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
                 />
               </ConstraintSection>
+
+              {/* sh:uniqueLang */}
+              <ConstraintSection
+                label="At most one value per language? (sh:uniqueLang)"
+                info="sh:uniqueLang true forbids two values sharing the same language tag, e.g. only one English label. It only has an effect when the property can have several values."
+              >
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-600">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={draft.uniqueLang === 'true'}
+                    onClick={() => patchDraft({ uniqueLang: draft.uniqueLang === 'true' ? undefined : 'true' })}
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors
+                      ${draft.uniqueLang === 'true' ? 'bg-zinc-900' : 'bg-zinc-200'}
+                    `}
+                  >
+                    <span
+                      className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow transition-transform
+                        ${draft.uniqueLang === 'true' ? 'translate-x-4' : 'translate-x-0'}
+                      `}
+                    />
+                  </button>
+                  Require a unique language tag per value
+                </label>
+              </ConstraintSection>
             </AccordionSection>
 
             {/* ── Shape-based ── */}
@@ -500,6 +525,20 @@ export function Step4Constraints({ state, update }: Props) {
                   value={draft.in ?? ''}
                   onChange={e => patchDraft({ in: e.target.value || undefined })}
                   placeholder="Comma-separated: active, inactive, pending"
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
+              </ConstraintSection>
+
+              {/* sh:hasValue */}
+              <ConstraintSection
+                label="Must the value include a specific value? (sh:hasValue)"
+                info="sh:hasValue requires the property to have this exact value among its values (in addition to anything else). Useful for a mandatory flag, e.g. status must include 'active'."
+              >
+                <input
+                  type="text"
+                  value={draft.hasValue ?? ''}
+                  onChange={e => patchDraft({ hasValue: e.target.value || undefined })}
+                  placeholder="e.g. active"
                   className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
                 />
               </ConstraintSection>
@@ -592,6 +631,59 @@ export function Step4Constraints({ state, update }: Props) {
           Select a property above to define its constraints.
         </div>
       )}
+
+      {/* ── Shape-level rule: sh:closed applies to the whole NodeShape, so it
+             lives outside the per-property accordion above. ── */}
+      <div className="rounded-xl border border-zinc-200 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+              Close this shape
+              <InfoTip align="left" placement="top">
+                sh:closed true means a node may only use the property paths declared
+                in this shape — any other property makes it invalid. This applies to
+                the whole shape, not one property.
+              </InfoTip>
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Only allow the {state.properties.length} propert{state.properties.length === 1 ? 'y' : 'ies'} declared in this shape.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.closed}
+            onClick={() => update({ closed: !state.closed })}
+            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors
+              ${state.closed ? 'bg-zinc-900' : 'bg-zinc-200'}
+            `}
+          >
+            <span
+              className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow transition-transform
+                ${state.closed ? 'translate-x-4' : 'translate-x-0'}
+              `}
+            />
+          </button>
+        </div>
+        {state.closed && (
+          <div className="space-y-1.5 fade-up">
+            <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+              Also allow these extra properties (optional)
+              <InfoTip align="left" placement="top" className="lowercase">
+                sh:ignoredProperties lists predicates still permitted even when the
+                shape is closed — commonly rdf:type.
+              </InfoTip>
+            </label>
+            <input
+              type="text"
+              value={state.ignoredProperties}
+              onChange={e => update({ ignoredProperties: e.target.value })}
+              placeholder="Comma-separated: rdf:type, ex:note"
+              className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

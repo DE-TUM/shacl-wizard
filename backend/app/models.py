@@ -42,6 +42,8 @@ class PropertyConstraints(CamelModel):
     class_: str | None = Field(default=None, alias="class")
     node_: str | None = Field(default=None, alias="node")
     language_in: str | None = Field(default=None, alias="languageIn")
+    has_value: str | None = Field(default=None, alias="hasValue")
+    unique_lang: str | None = Field(default=None, alias="uniqueLang")  # "true" when enabled
     # sh:message — a human-readable annotation, NOT one of the 28 SHACL Core
     # constraint components. Customises the validation report text for this
     # property shape; never counted toward the coverage goal.
@@ -73,6 +75,9 @@ class CompletedShape(CamelModel):
     properties: list[PropertyShape] = Field(default_factory=list)
     # Optional sh:message annotation for the whole NodeShape (see note above).
     shape_message: str = Field(default="", alias="shapeMessage")
+    # sh:closed — when True, only the declared property paths are allowed.
+    closed: bool = Field(default=False)
+    ignored_properties: str = Field(default="", alias="ignoredProperties")
 
     @field_validator("target_type", mode="before")
     @classmethod
@@ -87,6 +92,8 @@ class WizardState(CamelModel):
     target_value: str = Field(default="", alias="targetValue")
     shape_name: str = Field(default="", alias="shapeName")
     shape_message: str = Field(default="", alias="shapeMessage")
+    closed: bool = Field(default=False)
+    ignored_properties: str = Field(default="", alias="ignoredProperties")
     properties: list[PropertyShape] = Field(default_factory=list)
     nl_description: str = Field(default="", alias="nlDescription")
     use_nl: bool = Field(default=False, alias="useNL")

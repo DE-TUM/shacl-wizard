@@ -12,7 +12,7 @@
 
 import { useState } from 'react'
 import { INITIAL_STATE } from '@/types'
-import type { WizardState, CompletedShape } from '@/types'
+import type { WizardState, CompletedShape, PropertyShape } from '@/types'
 
 import { ModeSelect }       from '@/components/wizard/ModeSelect'
 import { UploadScreen }     from '@/components/wizard/UploadScreen'
@@ -40,11 +40,12 @@ function canAdvance(state: WizardState): boolean {
 
 export default function App() {
   const [state, setState] = useState<WizardState>(INITIAL_STATE)
+  const [previousState, setPreviousState] = useState<WizardState | null>(null)
 
   const update = (patch: Partial<WizardState>) =>
     setState((prev: WizardState) => ({ ...prev, ...patch }))
 
-  const reset = () => setState(INITIAL_STATE)
+  const reset = () => { setState(INITIAL_STATE); setPreviousState(null) }
 
   const handleAddAnotherShape = () => {
     const completed: CompletedShape = {
@@ -53,11 +54,45 @@ export default function App() {
       targetValue: state.targetValue,
       properties:  state.properties,
     }
+    const allCompleted = [...state.completedShapes, completed]
+    const completedNames = new Set(allCompleted.flatMap(s => [
+      s.shapeName,
+      s.shapeName.split(':').pop()!,
+    ]))
+    // Collect sh:node refs from ALL completed shapes that don't have a shape yet
+    const pendingNodeRefs = [
+      ...new Set(
+        allCompleted
+          .flatMap(s => s.properties.map((p: PropertyShape) => p.constraints.node))
+          .filter((n): n is string => {
+            if (!n) return false
+            const local = n.split(':').pop()!
+            return !completedNames.has(n) && !completedNames.has(local)
+          })
+      ),
+    ]
+    setPreviousState(state)
     setState({
       ...INITIAL_STATE,
-      mode:            state.mode,
-      completedShapes: [...state.completedShapes, completed],
+      mode:                state.mode,
+      uploadedFileName:    state.uploadedFileName,
+      suggestedClasses:    state.suggestedClasses,
+      suggestedProperties: state.suggestedProperties,
+      propertiesByClass:   state.propertiesByClass,
+      suggestedConstraints: state.suggestedConstraints,
+      completedShapes:     allCompleted,
+      selectedPrefix:      state.selectedPrefix,
+      selectedNamespace:   state.selectedNamespace,
+      detectedPrefixes:    state.detectedPrefixes,
+      pendingNodeRefs,
     })
+  }
+
+  const handleUndoAddShape = () => {
+    if (previousState) {
+      setState(previousState)
+      setPreviousState(null)
+    }
   }
 
   // ── Mode selection ──────────────────────────────────────────────────────────
@@ -141,12 +176,23 @@ export default function App() {
 
         {/* Navigation bar */}
         <div className="flex justify-between items-center px-6 py-4 border-t border-zinc-100 bg-zinc-50/50 -mx-6 -mb-6 mt-6 rounded-b-2xl">
-          <button
-            onClick={() => state.step === 0 ? reset() : update({ step: state.step - 1 })}
-            className="text-zinc-500 text-sm px-3 py-2 rounded hover:bg-zinc-100 transition-colors"
-          >
-            {state.step === 0 ? '← Change mode' : '← Back'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => state.step === 0 ? reset() : update({ step: state.step - 1 })}
+              className="text-zinc-500 text-sm px-3 py-2 rounded hover:bg-zinc-100 transition-colors"
+            >
+              {state.step === 0 ? '← Change mode' : '← Back'}
+            </button>
+            {previousState && (
+              <button
+                onClick={handleUndoAddShape}
+                className="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1 rounded hover:bg-zinc-100 transition-colors"
+                title={`Go back to ${previousState.shapeName}`}
+              >
+                ↩ Back to {previousState.shapeName}
+              </button>
+            )}
+          </div>
           {state.step < 4 ? (
             <button
               onClick={() => update({ step: state.step + 1 })}
@@ -178,14 +224,14 @@ export default function App() {
       <div className="mt-4 px-1 h-4">
         {(state.shapeName || state.targetValue) && (
           <p className="text-[11px] text-zinc-400 mono truncate text-center">
-            {state.shapeName ? `ex:${state.shapeName}` : '…'}
+            {state.shapeName ? `${state.selectedPrefix}:${state.shapeName}` : '…'}
             {state.targetType && state.targetValue
               ? ` → ${
                   state.targetType === 'class'      ? 'sh:targetClass' :
                   state.targetType === 'node'       ? 'sh:targetNode' :
                   state.targetType === 'subjectsOf' ? 'sh:targetSubjectsOf' :
                                                       'sh:targetObjectsOf'
-                } ex:${state.targetValue}`
+                } ${state.selectedPrefix}:${state.targetValue}`
               : ''}
             {state.properties.length > 0
               ? ` · ${state.properties.length} propert${state.properties.length === 1 ? 'y' : 'ies'}`

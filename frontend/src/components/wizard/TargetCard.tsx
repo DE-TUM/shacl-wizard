@@ -1,14 +1,17 @@
 // A selectable card used in Step 1 for choosing the SHACL target type.
 
+import { InfoTip } from './InfoTip'
+
 interface TargetCardProps {
   label:       string
   description: string
   badge?:      string       // e.g. "sh:targetClass"
+  info?:       string
   selected:    boolean
   onClick:     () => void
 }
 
-export function TargetCard({ label, description, badge, selected, onClick }: TargetCardProps) {
+export function TargetCard({ label, description, badge, info, selected, onClick }: TargetCardProps) {
   return (
     <button
       onClick={onClick}
@@ -30,6 +33,15 @@ export function TargetCard({ label, description, badge, selected, onClick }: Tar
             >
               {badge}
             </span>
+          )}
+          {info && (
+            <InfoTip
+              align="left"
+              focusable={false}
+              className={selected ? 'info-tip-on-dark' : ''}
+            >
+              {info}
+            </InfoTip>
           )}
         </div>
         <div className={`text-xs mt-0.5 ${selected ? 'text-zinc-300' : 'text-zinc-500'}`}>

@@ -45,6 +45,7 @@ export interface PropertyConstraints {
   maxLength?:    string
   in?:           string   // comma-separated list of allowed values
   class?:        string   // sh:class constraint
+  node?:         string   // sh:node — references another NodeShape by local name or CURIE
   languageIn?:   string   // comma-separated language tags
 }
 
@@ -81,8 +82,16 @@ export interface WizardState {
   uploadedFileName:     string
   suggestedClasses:     string[]
   suggestedProperties:  string[]
+  propertiesByClass:    Record<string, string[]>
   suggestedConstraints: Record<string, Partial<PropertyConstraints>>
   completedShapes:      CompletedShape[]
+  // Namespace / prefix selection
+  detectedPrefixes:     Record<string, string>   // from uploaded file, e.g. { ub: 'http://...' }
+  selectedPrefix:       string                   // e.g. 'ub'
+  selectedNamespace:    string                   // e.g. 'http://swat.cse.lehigh.edu/onto/univ-bench.owl#'
+  // sh:node refs from the previous shape that don't yet have a completed shape —
+  // shown as quick-pick suggestions in Step 1 of the next shape
+  pendingNodeRefs:      string[]
 }
 
 export const INITIAL_STATE: WizardState = {
@@ -99,8 +108,13 @@ export const INITIAL_STATE: WizardState = {
   uploadedFileName:     '',
   suggestedClasses:     [],
   suggestedProperties:  [],
+  propertiesByClass:    {},
   suggestedConstraints: {},
   completedShapes:      [],
+  detectedPrefixes:     {},
+  selectedPrefix:       'ex',
+  selectedNamespace:    'http://example.org/',
+  pendingNodeRefs:      [],
 }
 
 // ─── Datatype options (shown in Step 4 constraint panel) ─────────────────────
@@ -131,6 +145,7 @@ export interface GenerateResponse {
 export interface ParseResponse {
   classes:              string[]
   properties:           string[]
+  propertiesByClass?:   Record<string, string[]>
   prefixes:             Record<string, string>
   detectedDatatypes:    Record<string, string>
   suggestedConstraints?: Record<string, Partial<PropertyConstraints>>

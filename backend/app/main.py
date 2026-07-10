@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import anyio
 import functools
+import os
+import tempfile
+from pathlib import Path
+
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,7 +19,7 @@ from app.models import (
     WizardState,
 )
 from app.services.llm_parser import parse_natural_language
-from app.services.rdf_parser import guess_rdf_format, parse_rdf_full
+from app.services.rdf_parser import guess_rdf_format, parse_rdf_from_file, parse_rdf_full
 from app.services.shapes import build_shapes_response
 from app.services.validator import run_pyshacl_validation
 
@@ -47,6 +51,9 @@ def health() -> dict[str, str | bool]:
         "groqModel": settings.groq_model,
         "geminiConfigured": bool(settings.gemini_api_key),
         "geminiModel": settings.gemini_model,
+        "rdfParserBackend": settings.rdf_parser_backend,
+        "jenaConfigured": settings.jena_configured,
+        "jenaClassDir": settings.jena_class_dir or "",
     }
 
 
@@ -57,8 +64,10 @@ def parse_nl(request: ParseNLRequest) -> ParseNLResponse:
 
 @router.post("/generate", response_model=GenerateResponse)
 def generate(state: WizardState) -> GenerateResponse:
+    base_uri = state.selected_namespace.strip() or settings.base_uri
+    prefix   = state.selected_prefix.strip()   or "ex"
     try:
-        formats, shape_uri, summary = build_shapes_response(state, settings.base_uri)
+        formats, shape_uri, summary = build_shapes_response(state, base_uri, prefix)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -75,15 +84,48 @@ async def parse_rdf(
         raise HTTPException(status_code=400, detail="Provide data_file or graph_text.")
 
     filename = data_file.filename if data_file else "pasted-graph.ttl"
-    text = graph_text
-    if data_file is not None:
-        text = _decode_bytes(await data_file.read(), filename)
 
-    try:
-        fn = functools.partial(parse_rdf_full, text or "", filename, rdf_format, settings)
-        return await anyio.to_thread.run_sync(fn)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not parse RDF graph: {exc}") from exc
+    _file_size = data_file.size if data_file and hasattr(data_file, "size") else "unknown"
+    print(
+        f"[UPLOAD DEBUG] data_file present: {data_file is not None} | "
+        f"graph_text present: {bool(graph_text)} | "
+        f"filename: {filename} | file size: {_file_size} bytes",
+        flush=True,
+    )
+
+    if data_file is not None:
+        # Stream upload to disk in 1 MB chunks — the file is never held in RAM as a
+        # Python string, so this works for files of any size.
+        suffix = Path(filename).suffix or ".ttl"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_path = tmp.name
+        try:
+            while chunk := await data_file.read(1024 * 1024):
+                tmp.write(chunk)
+            tmp.close()
+            fn = functools.partial(parse_rdf_from_file, tmp_path, filename, rdf_format, settings)
+            return await anyio.to_thread.run_sync(fn)
+        except Exception as exc:
+            msg = str(exc)
+            if "too large for RDFLib fallback" in msg:
+                detail = (
+                    "This file is too large to process without the Jena parser. "
+                    "Please ensure Jena is configured correctly, or upload a smaller file."
+                )
+            else:
+                detail = f"Could not parse RDF graph: {exc}"
+            raise HTTPException(status_code=400, detail=detail) from exc
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    else:
+        try:
+            fn = functools.partial(parse_rdf_full, graph_text or "", filename, rdf_format, settings)
+            return await anyio.to_thread.run_sync(fn)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not parse RDF graph: {exc}") from exc
 
 
 @router.post("/validate", response_model=ValidationResponse)

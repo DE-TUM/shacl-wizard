@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import type { WizardState, PropertyConstraints } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   state:  WizardState
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function Step4Constraints({ state, update }: Props) {
+  const pfx = state.selectedPrefix || 'ex'
   const [activeId, setActiveId]         = useState<string | null>(null)
   const [draft,    setDraft]            = useState<PropertyConstraints>({})
   const [editingName, setEditingName]   = useState(false)
@@ -45,8 +47,12 @@ export function Step4Constraints({ state, update }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
           What rules apply to each property?
+          <InfoTip align="left">
+            Constraints are the checks SHACL runs for a property, such as whether a
+            value is required, what type it must be, or which values are allowed.
+          </InfoTip>
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
           Select a property below and configure its constraints.
@@ -54,25 +60,37 @@ export function Step4Constraints({ state, update }: Props) {
       </div>
 
       {/* Property selector pills */}
-      <div className="flex flex-wrap gap-2">
-        {state.properties.map(prop => (
-          <button
-            key={prop.id}
-            onClick={() => setActiveId(prop.id)}
-            className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
-              ${activeId === prop.id
-                ? 'bg-zinc-900 text-white border-zinc-900'
-                : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
-            `}
-          >
-            {prop.path}
-            {Object.keys(prop.constraints).length > 0 && (
-              <span className="ml-1.5 opacity-60">
-                {Object.keys(prop.constraints).length}×
-              </span>
-            )}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+          Property to edit
+          <InfoTip align="left" className="lowercase">
+            Pick a predicate first. The rules you set below will apply only to
+            values reached through that property.
+          </InfoTip>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {state.properties.map(prop => (
+            <button
+              key={prop.id}
+              onClick={() => setActiveId(prop.id)}
+              className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
+                ${activeId === prop.id
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
+              `}
+            >
+              {prop.path}
+              {(() => {
+                const count = Object.values(prop.constraints).filter(
+                  v => v !== null && v !== undefined && v !== ''
+                ).length
+                return count > 0 ? (
+                  <span className="ml-1.5 opacity-60">{count}x</span>
+                ) : null
+              })()}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Constraint editor */}
@@ -106,15 +124,22 @@ export function Step4Constraints({ state, update }: Props) {
                 className="mono text-sm font-medium text-zinc-800 hover:text-emerald-700 transition-colors"
                 title="Click to rename"
               >
-                ex:{activeProperty.path}
+                {activeProperty.path.includes(':') ? activeProperty.path : `${pfx}:${activeProperty.path}`}
               </button>
             )}
+            <InfoTip align="left">
+              This property name becomes the sh:path in the output. SHACL checks the
+              values connected to the target node through this path.
+            </InfoTip>
           </div>
 
           <div className="p-4 border border-zinc-200 rounded-xl space-y-5">
 
             {/* ── Cardinality ── */}
-            <ConstraintSection label="How many values must this property have?">
+            <ConstraintSection
+              label="How many values must this property have?"
+              info="Cardinality controls whether the property is required and how many values are allowed for each target node."
+            >
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {[
                   { label: 'Exactly one',  min: '1', max: '1' },
@@ -122,7 +147,7 @@ export function Step4Constraints({ state, update }: Props) {
                   { label: 'At most one',  min: '', max: '1' },
                   { label: 'Optional',     min: '', max: '' },
                 ].map(opt => {
-                  const active = draft.minCount === (opt.min || undefined) && draft.maxCount === (opt.max || undefined)
+                  const active = (draft.minCount || undefined) === (opt.min || undefined) && (draft.maxCount || undefined) === (opt.max || undefined)
                   return (
                     <button
                       key={opt.label}
@@ -137,13 +162,26 @@ export function Step4Constraints({ state, update }: Props) {
                 })}
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Custom min" value={draft.minCount} onChange={v => patchDraft({ minCount: v })} />
-                <NumberInput label="Custom max" value={draft.maxCount} onChange={v => patchDraft({ maxCount: v })} />
+                <NumberInput
+                  label="Custom min"
+                  value={draft.minCount}
+                  onChange={v => patchDraft({ minCount: v })}
+                  info="sh:minCount is the smallest number of values this property must have."
+                />
+                <NumberInput
+                  label="Custom max"
+                  value={draft.maxCount}
+                  onChange={v => patchDraft({ maxCount: v })}
+                  info="sh:maxCount is the largest number of values this property may have."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── Datatype ── */}
-            <ConstraintSection label="What type of value is expected?">
+            <ConstraintSection
+              label="What type of value is expected?"
+              info="Datatype constraints are for literal values such as text, numbers, dates, and booleans."
+            >
               <div className="flex flex-wrap gap-1.5">
                 {DATATYPE_OPTIONS.map(opt => (
                   <button
@@ -160,17 +198,43 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Node kind ── */}
-            <ConstraintSection label="Should the value be a resource or a plain value?">
+            <ConstraintSection
+              label="Should the value be a resource or a plain value?"
+              info="Node kind distinguishes named resources (IRIs), blank nodes, and plain literal values."
+            >
               <div className="flex flex-wrap gap-1.5">
                 {NODEKIND_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => patchDraft({ nodeKind: draft.nodeKind === opt.value ? undefined : opt.value })}
-                    className={`text-[11px] px-3 py-1 rounded-full border transition-colors
+                    className={`inline-flex items-center gap-1 text-[11px] px-3 py-1 rounded-full border transition-colors
                       ${draft.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
                     `}
                   >
                     {opt.label}
+                    {opt.value === 'sh:IRI' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is a named resource identified by a URI, like
+                        <span className="font-mono"> ex:Paris</span> or a full URL. Use this
+                        when the property links to another entity in the graph.
+                      </InfoTip>
+                    )}
+                    {opt.value === 'sh:BlankNode' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is an anonymous node with no global identifier. Blank nodes
+                        are embedded sub-structures (e.g. an address block) that exist only
+                        inside this graph and cannot be referenced from outside.
+                      </InfoTip>
+                    )}
+                    {opt.value === 'sh:Literal' && (
+                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                        The value is a plain data value such as a string, number, date, or
+                        boolean, not a link to another resource. Examples:
+                        <span className="font-mono"> "Alice"</span>,
+                        <span className="font-mono"> 42</span>,
+                        <span className="font-mono"> true</span>.
+                      </InfoTip>
+                    )}
                   </button>
                 ))}
               </div>
@@ -182,7 +246,10 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Pattern ── */}
-            <ConstraintSection label="Does the value need to match a specific format? (regex)">
+            <ConstraintSection
+              label="Does the value need to match a specific format? (regex)"
+              info="sh:pattern checks text with a regular expression, which is useful for emails, IDs, codes, and similar formats."
+            >
               <input
                 type="text"
                 value={draft.pattern ?? ''}
@@ -193,28 +260,92 @@ export function Step4Constraints({ state, update }: Props) {
             </ConstraintSection>
 
             {/* ── Numeric range ── */}
-            <ConstraintSection label="Is there a numeric range? (for integers / decimals)">
+            <ConstraintSection
+              label="Is there a numeric range? (for integers / decimals)"
+              info="Range constraints compare numeric or date-like values against lower and upper bounds."
+            >
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Min value ≥" value={draft.minInclusive} onChange={v => patchDraft({ minInclusive: v })} />
-                <NumberInput label="Max value ≤" value={draft.maxInclusive} onChange={v => patchDraft({ maxInclusive: v })} />
+                <NumberInput
+                  label="Min value >="
+                  value={draft.minInclusive}
+                  onChange={v => patchDraft({ minInclusive: v })}
+                  info="sh:minInclusive means the value must be this number or higher."
+                />
+                <NumberInput
+                  label="Max value <="
+                  value={draft.maxInclusive}
+                  onChange={v => patchDraft({ maxInclusive: v })}
+                  info="sh:maxInclusive means the value must be this number or lower."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── String length ── */}
-            <ConstraintSection label="Is there a character length limit?">
+            <ConstraintSection
+              label="Is there a character length limit?"
+              info="Length constraints count the characters in a literal text value."
+            >
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Min length" value={draft.minLength} onChange={v => patchDraft({ minLength: v })} />
-                <NumberInput label="Max length" value={draft.maxLength} onChange={v => patchDraft({ maxLength: v })} />
+                <NumberInput
+                  label="Min length"
+                  value={draft.minLength}
+                  onChange={v => patchDraft({ minLength: v })}
+                  info="sh:minLength is the fewest characters the value may contain."
+                />
+                <NumberInput
+                  label="Max length"
+                  value={draft.maxLength}
+                  onChange={v => patchDraft({ maxLength: v })}
+                  info="sh:maxLength is the most characters the value may contain."
+                />
               </div>
             </ConstraintSection>
 
             {/* ── sh:in ── */}
-            <ConstraintSection label="Must the value be one of a fixed list? (sh:in)">
+            <ConstraintSection
+              label="Must the value be one of a fixed list? (sh:in)"
+              info="sh:in means the value must match one item from the allowed list, such as active, inactive, or pending."
+            >
               <input
                 type="text"
                 value={draft.in ?? ''}
                 onChange={e => patchDraft({ in: e.target.value || undefined })}
                 placeholder="Comma-separated: active, inactive, pending"
+                className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+              />
+            </ConstraintSection>
+
+            {/* ── sh:node ── */}
+            <ConstraintSection
+              label="Must the value conform to another shape? (sh:node)"
+              info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes — e.g. every worksFor value must match UniversityShape."
+            >
+              {state.completedShapes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {state.completedShapes.map(cs => (
+                    <button
+                      key={cs.shapeName}
+                      onClick={() => patchDraft({ node: draft.node === cs.shapeName ? undefined : cs.shapeName })}
+                      className={`text-[11px] px-3 py-1 rounded-full border transition-colors mono
+                        ${draft.node === cs.shapeName
+                          ? 'bg-zinc-900 text-white border-zinc-900'
+                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                      `}
+                    >
+                      {pfx}:{cs.shapeName}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                type="text"
+                value={draft.node ?? ''}
+                onChange={e => patchDraft({ node: e.target.value || undefined })}
+                placeholder={
+                  state.completedShapes.length > 0
+                    ? 'or type a shape CURIE, e.g. ex:AddressShape'
+                    : `e.g. ${pfx}:AddressShape`
+                }
                 className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
               />
             </ConstraintSection>
@@ -249,7 +380,7 @@ export function Step4Constraints({ state, update }: Props) {
             className="w-full h-10 rounded-md bg-zinc-900 hover:bg-zinc-700 text-white text-sm transition-colors"
           >
             Save rules for{' '}
-            <span className="mono ml-1 opacity-70">ex:{activeProperty.path}</span>
+            <span className="mono ml-1 opacity-70">{activeProperty.path.includes(':') ? activeProperty.path : `${pfx}:${activeProperty.path}`}</span>
           </button>
         </div>
       ) : (
@@ -263,23 +394,46 @@ export function Step4Constraints({ state, update }: Props) {
 
 // ─── Small reusable sub-components ───────────────────────────────────────────
 
-function ConstraintSection({ label, children }: { label: string; children: React.ReactNode }) {
+function ConstraintSection({
+  label,
+  info,
+  children,
+}: {
+  label: string
+  info?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2">{label}</p>
+      <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        {label}
+        {info && (
+          <InfoTip align="left" placement="top" className="lowercase">
+            {info}
+          </InfoTip>
+        )}
+      </p>
       {children}
     </div>
   )
 }
 
-function NumberInput({ label, value, onChange }: {
+function NumberInput({ label, value, onChange, info }: {
   label:    string
   value:    string | undefined
   onChange: (v: string | undefined) => void
+  info?:    string
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] text-zinc-400">{label}</label>
+      <label className="text-[10px] text-zinc-400 flex items-center gap-1.5">
+        {label}
+        {info && (
+          <InfoTip align="left" placement="top" className="lowercase">
+            {info}
+          </InfoTip>
+        )}
+      </label>
       <input
         type="number"
         value={value ?? ''}

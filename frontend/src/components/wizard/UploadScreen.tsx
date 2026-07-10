@@ -1,14 +1,37 @@
 import { useRef, useState } from 'react'
 import { parseRdfFile, parseRdfText } from '@/api/backend'
 import type { WizardState } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   update: (patch: Partial<WizardState>) => void
   onBack: () => void
 }
 
+// Vocabulary prefixes that belong to fixed external namespaces — never use these
+// as the "data namespace" for generating shapes.
+const WELL_KNOWN_PREFIXES = new Set([
+  'rdf', 'rdfs', 'owl', 'xsd', 'sh', 'shacl',
+  'skos', 'dc', 'dcterms', 'dct', 'foaf', 'schema',
+  'prov', 'void', 'sd', 'geo', 'wgs',
+])
+
+function pickBestPrefix(prefixes: Record<string, string>): { prefix: string; namespace: string } {
+  const candidates = Object.entries(prefixes).filter(
+    ([p]) => !WELL_KNOWN_PREFIXES.has(p.toLowerCase()) && p !== '',
+  )
+  if (candidates.length > 0) {
+    // Prefer shorter prefixes (more likely to be the "main" ontology)
+    candidates.sort((a, b) => a[0].length - b[0].length || a[0].localeCompare(b[0]))
+    const [prefix, namespace] = candidates[0]
+    return { prefix, namespace }
+  }
+  return { prefix: 'ex', namespace: 'http://example.org/' }
+}
+
 export function UploadScreen({ update, onBack }: Props) {
   const [parsing, setParsing] = useState(false)
+  const [parsingLarge, setParseLarge] = useState(false)
   const [parseError, setParseError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -16,28 +39,41 @@ export function UploadScreen({ update, onBack }: Props) {
     filename: string,
     classes: string[],
     properties: string[],
+    propertiesByClass: WizardState['propertiesByClass'],
     suggestedConstraints: WizardState['suggestedConstraints'],
+    prefixes: Record<string, string>,
   ) => {
+    const { prefix, namespace } = pickBestPrefix(prefixes)
     update({
       uploadedFileName:     filename,
       suggestedClasses:     classes,
       suggestedProperties:  properties,
+      propertiesByClass:    propertiesByClass,
       suggestedConstraints: suggestedConstraints,
+      detectedPrefixes:     prefixes,
+      selectedPrefix:       prefix,
+      selectedNamespace:    namespace,
       step:                 0,
     })
   }
 
   const handleFile = async (file: File) => {
     setParsing(true)
+    setParseLarge(file.size > 50 * 1024 * 1024) // flag files over 50 MB
     setParseError('')
 
     try {
-      const { classes, properties, suggestedConstraints = {} } = await parseRdfFile(file)
-      applyParsedGraph(file.name, classes, properties, suggestedConstraints)
+      const { classes, properties, propertiesByClass = {}, suggestedConstraints = {}, prefixes = {} } = await parseRdfFile(file)
+      applyParsedGraph(file.name, classes, properties, propertiesByClass, suggestedConstraints, prefixes)
     } catch (error) {
-      setParseError(error instanceof Error ? error.message : 'Could not parse the RDF file.')
+      if (error instanceof Error && error.name === 'AbortError') {
+        setParseError('File parsing timed out. Try a smaller file or ensure Jena is configured.')
+      } else {
+        setParseError(error instanceof Error ? error.message : 'Could not parse the RDF file.')
+      }
     } finally {
       setParsing(false)
+      setParseLarge(false)
     }
   }
 
@@ -47,8 +83,8 @@ export function UploadScreen({ update, onBack }: Props) {
     setParseError('')
 
     try {
-      const { classes, properties, suggestedConstraints = {} } = await parseRdfText(graphText)
-      applyParsedGraph('pasted-graph.ttl', classes, properties, suggestedConstraints)
+      const { classes, properties, propertiesByClass = {}, suggestedConstraints = {}, prefixes = {} } = await parseRdfText(graphText)
+      applyParsedGraph('pasted-graph.ttl', classes, properties, propertiesByClass, suggestedConstraints, prefixes)
     } catch (error) {
       setParseError(error instanceof Error ? error.message : 'Could not parse the pasted Turtle.')
     } finally {
@@ -59,7 +95,13 @@ export function UploadScreen({ update, onBack }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Upload your RDF data graph</h2>
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+          Upload your RDF data graph
+          <InfoTip align="left">
+            A data graph is the RDF file with your actual records. A shapes graph is
+            the separate rules file that checks those records.
+          </InfoTip>
+        </h2>
         <p className="text-sm text-zinc-500 mt-1">
           This is your data file, not a shapes graph. The app will extract classes and properties
           to pre-fill the wizard.
@@ -80,7 +122,11 @@ export function UploadScreen({ update, onBack }: Props) {
               ))}
             </div>
             <p className="text-sm text-zinc-500">Parsing RDF file...</p>
-            <p className="text-xs text-zinc-400 mono">Extracting classes and properties</p>
+            {parsingLarge ? (
+              <p className="text-xs text-amber-500">Parsing large file, this may take several minutes...</p>
+            ) : (
+              <p className="text-xs text-zinc-400 mono">Extracting classes and properties</p>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
@@ -100,7 +146,13 @@ export function UploadScreen({ update, onBack }: Props) {
       )}
 
       <div className="border-t border-zinc-100 pt-4">
-        <p className="text-xs text-zinc-400 mb-2">Or paste raw Turtle text directly:</p>
+        <p className="text-xs text-zinc-400 mb-2 flex items-center gap-1.5">
+          Or paste raw Turtle text directly:
+          <InfoTip align="left">
+            Turtle is a compact text syntax for RDF triples. Paste example data here
+            and the wizard will look for reusable classes and properties.
+          </InfoTip>
+        </p>
         <textarea
           placeholder={'@prefix ex: <http://example.org/> .\nex:Alice a ex:Person ;\n    ex:name "Alice" .'}
           className="w-full min-h-[100px] px-3 py-2 text-xs mono rounded-md border border-zinc-200 resize-none focus:outline-none focus:border-zinc-400"

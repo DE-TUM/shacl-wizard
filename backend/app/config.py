@@ -21,6 +21,25 @@ def _llm_provider(value: str) -> str:
     return provider if provider in {"auto", "groq", "gemini", "heuristic"} else "auto"
 
 
+def _rdf_parser_backend(value: str) -> str:
+    backend = value.strip().lower()
+    return backend if backend in {"auto", "rdflib", "jena"} else "auto"
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str
@@ -31,6 +50,18 @@ class Settings:
     groq_model: str
     gemini_api_key: str | None
     gemini_model: str
+    rdf_parser_backend: str
+    rdf_inference_limit_triples: int
+    rdf_llm_verify_limit_triples: int
+    jena_java_bin: str | None
+    jena_class_dir: str | None
+    jena_request_timeout_seconds: float
+    jena_min_file_size_mb: float
+    rdf_sample_tier1_threshold: int
+    rdf_sample_tier2_threshold: int
+    rdf_sample_tier1_rate: float
+    rdf_sample_tier2_rate: float
+    rdf_sample_max: int
 
     @property
     def should_try_groq(self) -> bool:
@@ -50,6 +81,18 @@ class Settings:
     def requires_gemini(self) -> bool:
         return self.llm_provider.lower() == "gemini"
 
+    @property
+    def jena_configured(self) -> bool:
+        return bool(self.jena_java_bin and self.jena_class_dir)
+
+    @property
+    def should_try_jena(self) -> bool:
+        return self.rdf_parser_backend in {"auto", "jena"} and self.jena_configured
+
+    @property
+    def requires_jena(self) -> bool:
+        return self.rdf_parser_backend == "jena"
+
 
 def get_settings() -> Settings:
     return Settings(
@@ -66,4 +109,16 @@ def get_settings() -> Settings:
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        rdf_parser_backend=_rdf_parser_backend(os.getenv("RDF_PARSER_BACKEND", "auto")),
+        rdf_inference_limit_triples=_int_env("RDF_INFERENCE_LIMIT_TRIPLES", 10_000),
+        rdf_llm_verify_limit_triples=_int_env("RDF_LLM_VERIFY_LIMIT_TRIPLES", 500_000),
+        jena_java_bin=os.getenv("JENA_JAVA_BIN") or None,
+        jena_class_dir=os.getenv("JENA_CLASS_DIR") or None,
+        jena_request_timeout_seconds=_float_env("JENA_REQUEST_TIMEOUT_SECONDS", 600.0),
+        jena_min_file_size_mb=_float_env("JENA_MIN_FILE_SIZE_MB", 200.0),
+        rdf_sample_tier1_threshold=_int_env("RDF_SAMPLE_TIER1_THRESHOLD", 100_000),
+        rdf_sample_tier2_threshold=_int_env("RDF_SAMPLE_TIER2_THRESHOLD", 1_000_000),
+        rdf_sample_tier1_rate=_float_env("RDF_SAMPLE_TIER1_RATE", 0.5),
+        rdf_sample_tier2_rate=_float_env("RDF_SAMPLE_TIER2_RATE", 0.2),
+        rdf_sample_max=_int_env("RDF_SAMPLE_MAX", 500_000),
     )

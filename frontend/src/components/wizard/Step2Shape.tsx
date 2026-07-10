@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { parseNaturalLanguage } from '@/api/backend'
 import type { WizardState, PropertyShape, PropertyConstraints, CompletedShape } from '@/types'
+import { InfoTip } from './InfoTip'
 
 interface Props {
   state:           WizardState
@@ -12,33 +13,68 @@ function uid() {
   return Math.random().toString(36).slice(2, 8)
 }
 
+function mergeConstraints(
+  ai: PropertyConstraints,
+  up: Partial<PropertyConstraints>,
+): PropertyConstraints {
+  const result: PropertyConstraints = { ...ai }
+
+  // nodeKind: upload wins (upload observed real IRI values in the file)
+  if (up.nodeKind) {
+    result.nodeKind = up.nodeKind
+    if (up.nodeKind === 'sh:IRI') delete result.datatype
+  }
+
+  // datatype: upload wins only when it found a concrete XSD type and AI didn't set one
+  if (up.datatype && !ai.datatype) {
+    result.datatype = up.datatype
+  }
+
+  // Everything else follows AI-wins rules (in, range bounds, minCount, maxCount, pattern):
+  // They are already in `result` from the `{ ...ai }` spread.
+  // No upload fields override them.
+
+  return result
+}
+
+// Match on the local name (part after the last colon) so the AI's bare
+// "jobTitle" lines up with the upload's CURIE "schema:jobTitle".
+function localName(path: string): string {
+  const i = path.lastIndexOf(':')
+  return (i >= 0 ? path.slice(i + 1) : path).toLowerCase()
+}
+
 function mergeWithUpload(
   aiProps: PropertyShape[],
   upload: Record<string, Partial<PropertyConstraints>>,
 ): PropertyShape[] {
-  const merged = aiProps.map(prop => {
-    const up = upload[prop.path]
-    if (!up) return prop
-
-    const ai = prop.constraints
-    const result: PropertyConstraints = { ...ai }
-
-    if (up.nodeKind === 'sh:IRI') {
-      // Upload observed IRI values — trust it; a property can't also have a literal datatype
-      result.nodeKind = 'sh:IRI'
-      delete result.datatype
-    } else if (up.datatype) {
-      // Upload inferred a concrete XSD type from real literal values — keep it
-      result.datatype = up.datatype
-    }
-
-    return { ...prop, constraints: result }
-  })
-
-  // Preserve upload-found properties that AI didn't mention
-  const aiPaths = new Set(aiProps.map(p => p.path))
+  // Index upload entries by local name → [full CURIE path, constraints]
+  const uploadIndex = new Map<string, [string, Partial<PropertyConstraints>]>()
   for (const [path, constraints] of Object.entries(upload)) {
-    if (!aiPaths.has(path)) {
+    uploadIndex.set(localName(path), [path, constraints])
+  }
+
+  // Start with AI properties, merging upload data where local names overlap.
+  const merged: PropertyShape[] = []
+  const usedUploadKeys = new Set<string>()
+  for (const aiProp of aiProps) {
+    const key = localName(aiProp.path)
+    const upEntry = uploadIndex.get(key)
+    if (upEntry) {
+      usedUploadKeys.add(key)
+      merged.push({
+        ...aiProp,
+        path: upEntry[0], // prefer the file's full CURIE path over the AI's bare name
+        constraints: mergeConstraints(aiProp.constraints, upEntry[1]),
+      })
+    } else {
+      merged.push(aiProp)
+    }
+  }
+
+  // Append upload-only properties that AI didn't mention
+  for (const [path, constraints] of Object.entries(upload)) {
+    if (!usedUploadKeys.has(localName(path))) {
       merged.push({ id: uid(), path, constraints: constraints as PropertyConstraints })
     }
   }
@@ -71,7 +107,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Give your shape a name.</h2>
+        <h2 className="text-lg font-semibold text-zinc-900 flex items-center gap-2">
+          Give your shape a name.
+          <InfoTip align="left">
+            A NodeShape is a named bundle of validation rules. The name lets you
+            reference and reuse that bundle in your shapes graph.
+          </InfoTip>
+        </h2>
         <p className="text-sm text-zinc-500 mt-1">
           This becomes the identifier for the NodeShape in the output file.
         </p>
@@ -79,6 +121,14 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
 
       {/* Shape name input */}
       <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
+          Shape name
+          <InfoTip align="left" className="lowercase">
+            This is not the class itself. It is the rule set that checks nodes from
+            the class or target you chose.
+          </InfoTip>
+        </label>
+        
         <div className="relative">
           <input
             autoFocus
@@ -124,7 +174,13 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
       <div className="border border-dashed border-zinc-200 rounded-xl p-4 bg-zinc-50/60 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold text-zinc-800">AI-assisted input</span>
+            <span className="text-sm font-semibold text-zinc-800 flex items-center gap-1.5">
+              AI-assisted input
+              <InfoTip align="left">
+                Describe the intended rules in ordinary language. The result is a
+                draft list of SHACL properties and constraints for you to review.
+              </InfoTip>
+            </span>
             <p className="text-xs text-zinc-500 mt-0.5">
               Describe your data in plain English — AI will suggest properties and constraints.
             </p>
@@ -148,11 +204,18 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
 
         {state.useNL && (
           <div className="space-y-2 fade-up">
+            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+              Plain-English constraints
+              <InfoTip align="left" className="lowercase">
+                Mention required fields, optional fields, value types, ranges,
+                formats, and fixed lists. You can edit every suggestion later.
+              </InfoTip>
+            </p>
             <textarea
               value={state.nlDescription}
               onChange={e => update({ nlDescription: e.target.value, nlParsed: false })}
               placeholder="Describe what your data must look like. e.g. A Person must have exactly one name, at least one email address, and an optional age between 0 and 150."
-              className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-zinc-200 resize-none
+              className="w-full min-h-[100px] max-h-[400px] px-3 py-2 text-sm rounded-md border border-zinc-200 resize-y
                 focus:outline-none focus:border-zinc-400 bg-white"
             />
             <button

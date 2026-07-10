@@ -1,0 +1,18 @@
+APP_NAME=SHACL Wizard Backend
+BASE_URI=http://example.org/
+BACKEND_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# LLM provider priority: Groq → Gemini → heuristic fallback
+# auto     = try Groq first, then Gemini, then heuristic (recommended)
+# groq     = require GROQ_API_KEY (error if missing)
+# gemini   = require GEMINI_API_KEY (error if missing)
+# heuristic = never call an external LLM
+LLM_PROVIDER=auto
+
+# Groq (free tier available at console.groq.com)
+# GROQ_API_KEY=gsk_...
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Google Gemini (optional fallback)
+# GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-2.5-flash

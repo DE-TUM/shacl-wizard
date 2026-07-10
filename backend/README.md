@@ -63,6 +63,32 @@ With `LLM_PROVIDER=auto`, Groq is tried first. If Groq fails or has no key, Gemi
 
 ---
 
+## Apache Jena RDF Parser
+
+Large RDF uploads can be parsed by shelling out to a small Apache Jena `TurtleParser` Java program instead of RDFLib. This is a one-shot subprocess call (`java -cp <classpath> TurtleParser <file>`) that streams Turtle to N-Triples on disk; there is no Fuseki server or SPARQL endpoint involved.
+
+RDFLib remains the fallback unless Jena is required explicitly:
+
+```bash
+# auto   = use Jena when JENA_JAVA_BIN and JENA_CLASS_DIR are set, otherwise RDFLib
+# rdflib = always use RDFLib
+# jena   = require Jena; fail instead of falling back
+RDF_PARSER_BACKEND=auto
+
+JENA_JAVA_BIN=/path/to/java
+JENA_CLASS_DIR=/path/to/compiled/jena/classes   # must contain TurtleParser.class and a lib/ dir with Jena's jars
+JENA_MIN_FILE_SIZE_MB=200        # below this file size, RDFLib is used even if Jena is configured (JVM cold-start isn't worth it)
+JENA_REQUEST_TIMEOUT_SECONDS=600
+```
+
+For very large graphs, the statistical inference pass samples triples instead of scanning all of them, tiered by `RDF_SAMPLE_TIER1_THRESHOLD` / `RDF_SAMPLE_TIER2_THRESHOLD` / `RDF_SAMPLE_TIER1_RATE` / `RDF_SAMPLE_TIER2_RATE` / `RDF_SAMPLE_MAX`. `rdf:type` triples are always kept in full so class coverage isn't lost.
+
+The Jena path intentionally skips the optional LLM verification pass because that pass expects an in-process RDFLib graph sample; RDFLib mode keeps the LLM verification behavior.
+
+> **Note:** `backend/.env.example` still documents the older Fuseki-based setup (`JENA_BASE_URL`, `JENA_SPARQL_ENDPOINT`, `JENA_FUSEKI_COMMAND`, etc.), which `config.py` no longer reads — it needs to be refreshed to match the variables above.
+
+---
+
 ## Service Architecture
 
 ```
@@ -73,6 +99,7 @@ app/
 └── services/
     ├── llm_parser.py          # NL description → property shapes via LLM or heuristic
     ├── rdf_parser.py          # RDF graph parsing + two-layer constraint inference
+    ├── jena_parser.py         # Optional Apache Jena TurtleParser subprocess wrapper
     ├── constraint_verifier.py # LLM verification pass over Python-inferred constraints
     ├── shapes.py              # SHACL graph construction with RDFLib + serialization
     └── validator.py           # PySHACL runner, violation extraction and message cleaning
@@ -80,9 +107,10 @@ app/
 
 ### Constraint inference pipeline (`/api/parse-rdf`)
 
-1. **Python statistical pass** — RDFLib iterates the uploaded graph, computes minCount/maxCount per property, detects XSD datatypes, flags sh:IRI vs sh:Literal, and identifies `sh:in` candidates for low-cardinality categorical values.
-2. **LLM verification pass** — a second call (Groq/Gemini) reviews the inferred constraints against a sample of real triples. It can add `sh:pattern` for recognisable formats (email, phone), tighten numeric ranges, and remove false positives. Python guardrails restore any cardinality values the LLM incorrectly drops.
-3. **Large graph optimisation** — graphs with more than 10,000 triples skip minCount/maxCount/sh:in inference (`inferenceLimited: true` in the response) to keep response times acceptable.
+1. **Parser selection** — `RDF_PARSER_BACKEND=auto` tries the Jena `TurtleParser` subprocess when `JENA_JAVA_BIN`/`JENA_CLASS_DIR` are configured and the file is above `JENA_MIN_FILE_SIZE_MB`, otherwise RDFLib parses in-process. `jena` requires that configuration; `rdflib` disables Jena.
+2. **Python statistical pass** — runs over the resulting RDFLib graph either way (Jena's output is converted to N-Triples and loaded into RDFLib, optionally sampled per the tiers above). The pass computes minCount/maxCount per property, detects XSD datatypes, flags sh:IRI vs sh:Literal, and identifies `sh:in` candidates for low-cardinality categorical values.
+3. **LLM verification pass** — RDFLib mode (small/medium graphs) can make a second Groq/Gemini call to review inferred constraints against a sample of real triples. The Jena path skips this pass.
+4. **Large graph optimisation** — graphs with more than `RDF_INFERENCE_LIMIT_TRIPLES` triples skip minCount/maxCount/sh:in inference (`inferenceLimited: true` in the response) to keep response times acceptable.
 
 ---
 

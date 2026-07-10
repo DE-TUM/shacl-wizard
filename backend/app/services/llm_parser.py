@@ -40,6 +40,7 @@ LLM_SCHEMA: dict[str, Any] = {
                             "class": {"type": "string"},
                             "node": {"type": "string"},
                             "languageIn": {"type": "string"},
+                            "message": {"type": "string"},
                         },
                     },
                 },
@@ -60,7 +61,13 @@ Return JSON matching the schema exactly. Constraint values must be strings
 because the frontend stores wizard input as strings. Only use these constraint
 fields: minCount, maxCount, datatype, nodeKind, pattern, minInclusive,
 maxInclusive, minExclusive, maxExclusive, minLength, maxLength, in, class, node,
-languageIn.
+languageIn, message.
+
+"message" is NOT a validating constraint — it is an optional custom
+sh:message string shown in the validation report when this property is
+violated. Only set it if the user explicitly asks for a custom error/validation
+message for a property (e.g. "show the message 'Email looks invalid'"). Never
+invent one.
 
 Use SHACL/XSD CURIEs such as xsd:string, xsd:integer, xsd:decimal, xsd:date,
 xsd:boolean, xsd:anyURI, sh:IRI, sh:Literal, and sh:BlankNode only when the

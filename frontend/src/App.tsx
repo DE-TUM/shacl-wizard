@@ -49,10 +49,11 @@ export default function App() {
 
   const handleAddAnotherShape = () => {
     const completed: CompletedShape = {
-      shapeName:   state.shapeName,
-      targetType:  state.targetType as CompletedShape['targetType'],
-      targetValue: state.targetValue,
-      properties:  state.properties,
+      shapeName:    state.shapeName,
+      targetType:   state.targetType as CompletedShape['targetType'],
+      targetValue:  state.targetValue,
+      properties:   state.properties,
+      shapeMessage: state.shapeMessage,
     }
     const allCompleted = [...state.completedShapes, completed]
     const completedNames = new Set(allCompleted.flatMap(s => [

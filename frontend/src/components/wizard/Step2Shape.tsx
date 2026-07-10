@@ -170,6 +170,27 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
         </p>
       </div>
 
+      {/* Node-shape-level sh:message — an annotation shown in the validation
+          report, NOT one of the 28 SHACL Core constraints. */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">
+          Custom validation message (optional)
+          <InfoTip align="left" className="lowercase">
+            A plain-language message shown in the validation report when a node
+            fails this shape (sh:message). It is a helpful annotation, not a
+            validating constraint.
+          </InfoTip>
+        </label>
+        <input
+          type="text"
+          value={state.shapeMessage}
+          onChange={e => update({ shapeMessage: e.target.value })}
+          placeholder="e.g. This must be a valid Person record."
+          className="w-full h-10 px-3 rounded-md border border-zinc-200 text-sm
+            focus:outline-none focus:border-zinc-400"
+        />
+      </div>
+
       {/* AI-assisted toggle panel */}
       <div className="border border-dashed border-zinc-200 rounded-xl p-4 bg-zinc-50/60 space-y-3">
         <div className="flex items-center justify-between">

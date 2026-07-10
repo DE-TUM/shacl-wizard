@@ -40,12 +40,31 @@ function anchorPattern(pattern: string): string {
   return p
 }
 
+// Escape a free-text string for use inside a Turtle/quoted literal.
+function ttlEscape(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+}
+
+// Escape a free-text string for use inside an XML text node.
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 // Unified shape data used internally by all builders
 type ShapeSource = {
-  shapeName:   string
-  targetType:  string
-  targetValue: string
-  properties:  PropertyShape[]
+  shapeName:    string
+  targetType:   string
+  targetValue:  string
+  properties:   PropertyShape[]
+  shapeMessage?: string
 }
 
 type PrefixInfo = {
@@ -67,10 +86,11 @@ function nsBase(ns: string): string {
 
 function toShapeSource(s: CompletedShape | WizardState): ShapeSource {
   return {
-    shapeName:   s.shapeName,
-    targetType:  s.targetType ?? '',
-    targetValue: s.targetValue,
-    properties:  s.properties,
+    shapeName:    s.shapeName,
+    targetType:   s.targetType ?? '',
+    targetValue:  s.targetValue,
+    properties:   s.properties,
+    shapeMessage: s.shapeMessage,
   }
 }
 
@@ -151,6 +171,11 @@ function buildShapeBlock(shape: ShapeSource, prefix: string): string[] {
     lines.push(`    ${map[shape.targetType] ?? 'sh:targetClass'} ${p(shape.targetValue)} ;`)
   }
 
+  // sh:message on the NodeShape — annotation only, not a validating constraint.
+  if (shape.shapeMessage && shape.shapeMessage.trim()) {
+    lines.push(`    sh:message "${ttlEscape(shape.shapeMessage.trim())}" ;`)
+  }
+
   shape.properties.forEach((prop, idx) => {
     const isLast = idx === shape.properties.length - 1
     lines.push('    sh:property [')
@@ -195,6 +220,8 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
     const tags = c.languageIn.split(',').map((t: string) => `"${t.trim()}"`).join(' ')
     lines.push(`        sh:languageIn ( ${tags} ) ;`)
   }
+  // sh:message — annotation only, not a validating constraint.
+  if (c.message) lines.push(`        sh:message "${ttlEscape(c.message)}" ;`)
   return lines
 }
 
@@ -248,6 +275,10 @@ function buildJsonLdShapeObj(shape: ShapeSource, prefix: string): Record<string,
     obj[pred] = { '@id': p(shape.targetValue) }
   }
 
+  if (shape.shapeMessage && shape.shapeMessage.trim()) {
+    obj['sh:message'] = shape.shapeMessage.trim()
+  }
+
   obj['sh:property'] = shape.properties.map(prop => buildJsonLdProperty(prop, prefix))
   return obj
 }
@@ -281,6 +312,7 @@ function buildJsonLdProperty(prop: PropertyShape, prefix: string): Record<string
   if (c.languageIn) {
     obj['sh:languageIn'] = { '@list': c.languageIn.split(',').map((t: string) => t.trim()) }
   }
+  if (c.message) obj['sh:message'] = c.message
 
   return obj
 }
@@ -347,11 +379,16 @@ export function buildRdfXml(state: WizardState, completedShapes: CompletedShape[
       lines.push(`    <${pred} rdf:resource="${toUri(shape.targetValue)}"/>`)
     }
 
+    if (shape.shapeMessage && shape.shapeMessage.trim()) {
+      lines.push(`    <sh:message>${xmlEscape(shape.shapeMessage.trim())}</sh:message>`)
+    }
+
     for (const prop of shape.properties) {
       const c = prop.constraints
       lines.push('    <sh:property>')
       lines.push('      <sh:PropertyShape>')
       lines.push(`        <sh:path rdf:resource="${toUri(prop.path)}"/>`)
+      if (c.message) lines.push(`        <sh:message>${xmlEscape(c.message)}</sh:message>`)
       if (c.minCount)     lines.push(`        <sh:minCount rdf:datatype="xsd:integer">${c.minCount}</sh:minCount>`)
       if (c.maxCount)     lines.push(`        <sh:maxCount rdf:datatype="xsd:integer">${c.maxCount}</sh:maxCount>`)
       if (c.datatype)     lines.push(`        <sh:datatype rdf:resource="http://www.w3.org/2001/XMLSchema#${c.datatype.replace('xsd:', '')}"/>`)

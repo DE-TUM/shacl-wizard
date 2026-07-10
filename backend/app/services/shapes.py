@@ -33,11 +33,13 @@ def build_shapes_graph(state: WizardState, base_uri: str, prefix: str = "ex") ->
 
     for cs in state.completed_shapes:
         _add_shape_to_graph(
-            graph, cs.shape_name, cs.target_type, cs.target_value, cs.properties, base_uri, prefix, detected
+            graph, cs.shape_name, cs.target_type, cs.target_value, cs.properties, base_uri, prefix, detected,
+            shape_message=cs.shape_message,
         )
 
     shape_uri = _add_shape_to_graph(
-        graph, state.shape_name, state.target_type, state.target_value, state.properties, base_uri, prefix, detected
+        graph, state.shape_name, state.target_type, state.target_value, state.properties, base_uri, prefix, detected,
+        shape_message=state.shape_message,
     )
     return graph, str(shape_uri)
 
@@ -51,6 +53,7 @@ def _add_shape_to_graph(
     base_uri: str,
     prefix: str = "ex",
     detected_prefixes: dict[str, str] | None = None,
+    shape_message: str = "",
 ) -> URIRef:
     shape = _resource(shape_name, base_uri, prefix, detected_prefixes)
     graph.add((shape, RDF.type, SH.NodeShape))
@@ -63,6 +66,12 @@ def _add_shape_to_graph(
             "objectsOf": SH.targetObjectsOf,
         }.get(target_type, SH.targetClass)
         graph.add((shape, target_predicate, _resource(target_value, base_uri, prefix, detected_prefixes)))
+
+    # sh:message on the NodeShape — a human-readable annotation surfaced in the
+    # validation report, not a validating constraint (excluded from the 28-item
+    # coverage goal).
+    if shape_message and shape_message.strip():
+        graph.add((shape, SH.message, Literal(shape_message.strip())))
 
     for prop in properties:
         if not prop.path.strip():
@@ -133,6 +142,13 @@ def _add_constraints(
         graph.add((subject, SH.node, _resource(c.node_, base_uri, prefix, detected_prefixes)))
     if c.in_:
         _add_rdf_list(graph, subject, SH["in"], [Literal(item) for item in _split_in_values(c.in_)])
+    if c.language_in:
+        _add_rdf_list(graph, subject, SH.languageIn, [Literal(tag) for tag in _split_csv(c.language_in)])
+    # sh:message is a shape-level annotation, NOT one of the 28 SHACL Core
+    # constraint components — it only customises the human-readable text in the
+    # validation report. Do not count it toward the coverage tally.
+    if c.message:
+        graph.add((subject, SH.message, Literal(c.message)))
 
 
 def _add_int(graph: Graph, subject: BNode, predicate: URIRef, value: str | None, label: str) -> None:

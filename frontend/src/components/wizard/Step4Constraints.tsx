@@ -122,8 +122,9 @@ export function Step4Constraints({ state, update }: Props) {
             >
               {prop.path}
               {(() => {
-                const count = Object.values(prop.constraints).filter(
-                  v => v !== null && v !== undefined && v !== ''
+                // Count only validating constraints — sh:message is an annotation.
+                const count = Object.entries(prop.constraints).filter(
+                  ([k, v]) => k !== 'message' && v !== null && v !== undefined && v !== ''
                 ).length
                 return count > 0 ? (
                   <span className="ml-1.5 opacity-60">{count}x</span>
@@ -444,6 +445,26 @@ export function Step4Constraints({ state, update }: Props) {
 
           </div>
 
+          {/* sh:message — a validation-report annotation, NOT one of the 28
+              SHACL Core constraints. Kept outside the constraint accordion. */}
+          <div className="rounded-xl border border-zinc-200 p-3 space-y-1.5">
+            <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+              Custom validation message (optional)
+              <InfoTip align="left" placement="top" className="lowercase">
+                A plain-language message shown in the validation report when this
+                property's rules are violated (sh:message). It is a helpful
+                annotation, not a validating constraint.
+              </InfoTip>
+            </label>
+            <input
+              type="text"
+              value={draft.message ?? ''}
+              onChange={e => patchDraft({ message: e.target.value || undefined })}
+              placeholder="e.g. Every person must have a valid email address."
+              className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm focus:outline-none focus:border-zinc-400"
+            />
+          </div>
+
           {/* Cross-field warnings (Phase 0.5) — informational, never blocking */}
           {issues.length > 0 && (
             <div className="space-y-1.5">
@@ -473,10 +494,10 @@ export function Step4Constraints({ state, update }: Props) {
             </div>
           )}
 
-          {/* Active constraint badges */}
-          {Object.keys(draft).length > 0 && (
+          {/* Active constraint badges (excludes the sh:message annotation) */}
+          {Object.keys(draft).some(k => k !== 'message') && (
             <div className="flex flex-wrap gap-1.5">
-              {Object.entries(draft).map(([k, v]) =>
+              {Object.entries(draft).filter(([k]) => k !== 'message').map(([k, v]) =>
                 v ? (
                   <span
                     key={k}

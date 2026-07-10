@@ -2,6 +2,9 @@
 // For each property added in Step 3, the user defines what constraints apply.
 // The panel on the left shows property pills; clicking one opens the constraint
 // editor for that property on the right.
+//
+// The editor groups constraints into a single-expand accordion, one collapsible
+// section per SHACL constraint category. Only one section is open at a time.
 
 import { useState, useEffect } from 'react'
 import type { WizardState, PropertyConstraints } from '@/types'
@@ -13,12 +16,26 @@ interface Props {
   update: (patch: Partial<WizardState>) => void
 }
 
+// Which draft keys belong to each accordion category. Drives the per-section
+// "active count" badge. Includes keys not yet exposed by a manual control
+// (e.g. class, minExclusive) so the badge still reflects values set via AI
+// parsing until their control lands in a later phase.
+const CATEGORY_KEYS: Record<string, (keyof PropertyConstraints)[]> = {
+  valueType:   ['datatype', 'nodeKind', 'class'],
+  cardinality: ['minCount', 'maxCount'],
+  valueRange:  ['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'],
+  stringBased: ['pattern', 'minLength', 'maxLength', 'languageIn'],
+  shapeBased:  ['node'],
+  other:       ['in'],
+}
+
 export function Step4Constraints({ state, update }: Props) {
   const pfx = state.selectedPrefix || 'ex'
   const [activeId, setActiveId]         = useState<string | null>(null)
   const [draft,    setDraft]            = useState<PropertyConstraints>({})
   const [editingName, setEditingName]   = useState(false)
   const [nameValue,   setNameValue]     = useState('')
+  const [openSection, setOpenSection]   = useState<string | null>('valueType')
 
   const activeProperty = state.properties.find(p => p.id === activeId) ?? null
 
@@ -33,6 +50,16 @@ export function Step4Constraints({ state, update }: Props) {
 
   const removeDraftKey = (key: keyof PropertyConstraints) =>
     setDraft(prev => { const n = { ...prev }; delete n[key]; return n })
+
+  // Single-expand: storing one open id means opening a section closes the rest.
+  const toggleSection = (id: string) =>
+    setOpenSection(prev => (prev === id ? null : id))
+
+  const countFor = (id: string) =>
+    CATEGORY_KEYS[id].filter(k => {
+      const v = draft[k]
+      return v !== undefined && v !== null && v !== ''
+    }).length
 
   const saveAndClose = () => {
     if (!activeId) return
@@ -133,222 +160,267 @@ export function Step4Constraints({ state, update }: Props) {
             </InfoTip>
           </div>
 
-          <div className="p-4 border border-zinc-200 rounded-xl space-y-5">
+          {/* ── Constraint accordion — one open section at a time ── */}
+          <div className="space-y-2">
 
-            {/* ── Cardinality ── */}
-            <ConstraintSection
-              label="How many values must this property have?"
-              info="Cardinality controls whether the property is required and how many values are allowed for each target node."
+            {/* ── Value Type ── */}
+            <AccordionSection
+              title="Value Type"
+              count={countFor('valueType')}
+              isOpen={openSection === 'valueType'}
+              onToggle={() => toggleSection('valueType')}
             >
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {[
-                  { label: 'Exactly one',  min: '1', max: '1' },
-                  { label: 'At least one', min: '1', max: '' },
-                  { label: 'At most one',  min: '', max: '1' },
-                  { label: 'Optional',     min: '', max: '' },
-                ].map(opt => {
-                  const active = (draft.minCount || undefined) === (opt.min || undefined) && (draft.maxCount || undefined) === (opt.max || undefined)
-                  return (
+              {/* Datatype */}
+              <ConstraintSection
+                label="What type of value is expected?"
+                info="Datatype constraints are for literal values such as text, numbers, dates, and booleans."
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {DATATYPE_OPTIONS.map(opt => (
                     <button
-                      key={opt.label}
-                      onClick={() => patchDraft({ minCount: opt.min || undefined, maxCount: opt.max || undefined })}
+                      key={opt.value}
+                      onClick={() => patchDraft({ datatype: draft.datatype === opt.value ? undefined : opt.value })}
                       className={`text-[11px] px-3 py-1 rounded-full border transition-colors
-                        ${active ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        ${draft.datatype === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
                       `}
                     >
                       {opt.label}
                     </button>
-                  )
-                })}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <NumberInput
-                  label="Custom min"
-                  value={draft.minCount}
-                  onChange={v => patchDraft({ minCount: v })}
-                  info="sh:minCount is the smallest number of values this property must have."
-                />
-                <NumberInput
-                  label="Custom max"
-                  value={draft.maxCount}
-                  onChange={v => patchDraft({ maxCount: v })}
-                  info="sh:maxCount is the largest number of values this property may have."
-                />
-              </div>
-            </ConstraintSection>
+                  ))}
+                </div>
+              </ConstraintSection>
 
-            {/* ── Datatype ── */}
-            <ConstraintSection
-              label="What type of value is expected?"
-              info="Datatype constraints are for literal values such as text, numbers, dates, and booleans."
-            >
-              <div className="flex flex-wrap gap-1.5">
-                {DATATYPE_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => patchDraft({ datatype: draft.datatype === opt.value ? undefined : opt.value })}
-                    className={`text-[11px] px-3 py-1 rounded-full border transition-colors
-                      ${draft.datatype === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-                    `}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </ConstraintSection>
-
-            {/* ── Node kind ── */}
-            <ConstraintSection
-              label="Should the value be a resource or a plain value?"
-              info="Node kind distinguishes named resources (IRIs), blank nodes, and plain literal values."
-            >
-              <div className="flex flex-wrap gap-1.5">
-                {NODEKIND_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => patchDraft({ nodeKind: draft.nodeKind === opt.value ? undefined : opt.value })}
-                    className={`inline-flex items-center gap-1 text-[11px] px-3 py-1 rounded-full border transition-colors
-                      ${draft.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-                    `}
-                  >
-                    {opt.label}
-                    {opt.value === 'sh:IRI' && (
-                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
-                        The value is a named resource identified by a URI, like
-                        <span className="font-mono"> ex:Paris</span> or a full URL. Use this
-                        when the property links to another entity in the graph.
-                      </InfoTip>
-                    )}
-                    {opt.value === 'sh:BlankNode' && (
-                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
-                        The value is an anonymous node with no global identifier. Blank nodes
-                        are embedded sub-structures (e.g. an address block) that exist only
-                        inside this graph and cannot be referenced from outside.
-                      </InfoTip>
-                    )}
-                    {opt.value === 'sh:Literal' && (
-                      <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
-                        The value is a plain data value such as a string, number, date, or
-                        boolean, not a link to another resource. Examples:
-                        <span className="font-mono"> "Alice"</span>,
-                        <span className="font-mono"> 42</span>,
-                        <span className="font-mono"> true</span>.
-                      </InfoTip>
-                    )}
-                  </button>
-                ))}
-              </div>
-              {draft.nodeKind === 'sh:Literal' && (
-                <p className="text-[10px] text-amber-600 mt-1.5">
-                  Tip: pair with sh:pattern to ensure the value is a string before the regex runs.
-                </p>
-              )}
-            </ConstraintSection>
-
-            {/* ── Pattern ── */}
-            <ConstraintSection
-              label="Does the value need to match a specific format? (regex)"
-              info="sh:pattern checks text with a regular expression, which is useful for emails, IDs, codes, and similar formats."
-            >
-              <input
-                type="text"
-                value={draft.pattern ?? ''}
-                onChange={e => patchDraft({ pattern: e.target.value || undefined })}
-                placeholder="e.g. ^[\w.]+@[\w.]+\.[a-z]{2,}$ for email"
-                className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
-              />
-            </ConstraintSection>
-
-            {/* ── Numeric range ── */}
-            <ConstraintSection
-              label="Is there a numeric range? (for integers / decimals)"
-              info="Range constraints compare numeric or date-like values against lower and upper bounds."
-            >
-              <div className="grid grid-cols-2 gap-2">
-                <NumberInput
-                  label="Min value >="
-                  value={draft.minInclusive}
-                  onChange={v => patchDraft({ minInclusive: v })}
-                  info="sh:minInclusive means the value must be this number or higher."
-                />
-                <NumberInput
-                  label="Max value <="
-                  value={draft.maxInclusive}
-                  onChange={v => patchDraft({ maxInclusive: v })}
-                  info="sh:maxInclusive means the value must be this number or lower."
-                />
-              </div>
-            </ConstraintSection>
-
-            {/* ── String length ── */}
-            <ConstraintSection
-              label="Is there a character length limit?"
-              info="Length constraints count the characters in a literal text value."
-            >
-              <div className="grid grid-cols-2 gap-2">
-                <NumberInput
-                  label="Min length"
-                  value={draft.minLength}
-                  onChange={v => patchDraft({ minLength: v })}
-                  info="sh:minLength is the fewest characters the value may contain."
-                />
-                <NumberInput
-                  label="Max length"
-                  value={draft.maxLength}
-                  onChange={v => patchDraft({ maxLength: v })}
-                  info="sh:maxLength is the most characters the value may contain."
-                />
-              </div>
-            </ConstraintSection>
-
-            {/* ── sh:in ── */}
-            <ConstraintSection
-              label="Must the value be one of a fixed list? (sh:in)"
-              info="sh:in means the value must match one item from the allowed list, such as active, inactive, or pending."
-            >
-              <input
-                type="text"
-                value={draft.in ?? ''}
-                onChange={e => patchDraft({ in: e.target.value || undefined })}
-                placeholder="Comma-separated: active, inactive, pending"
-                className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
-              />
-            </ConstraintSection>
-
-            {/* ── sh:node ── */}
-            <ConstraintSection
-              label="Must the value conform to another shape? (sh:node)"
-              info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes — e.g. every worksFor value must match UniversityShape."
-            >
-              {state.completedShapes.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {state.completedShapes.map(cs => (
+              {/* Node kind */}
+              <ConstraintSection
+                label="Should the value be a resource or a plain value?"
+                info="Node kind distinguishes named resources (IRIs), blank nodes, and plain literal values."
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {NODEKIND_OPTIONS.map(opt => (
                     <button
-                      key={cs.shapeName}
-                      onClick={() => patchDraft({ node: draft.node === cs.shapeName ? undefined : cs.shapeName })}
-                      className={`text-[11px] px-3 py-1 rounded-full border transition-colors mono
-                        ${draft.node === cs.shapeName
-                          ? 'bg-zinc-900 text-white border-zinc-900'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                      key={opt.value}
+                      onClick={() => patchDraft({ nodeKind: draft.nodeKind === opt.value ? undefined : opt.value })}
+                      className={`inline-flex items-center gap-1 text-[11px] px-3 py-1 rounded-full border transition-colors
+                        ${draft.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
                       `}
                     >
-                      {pfx}:{cs.shapeName}
+                      {opt.label}
+                      {opt.value === 'sh:IRI' && (
+                        <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                          The value is a named resource identified by a URI, like
+                          <span className="font-mono"> ex:Paris</span> or a full URL. Use this
+                          when the property links to another entity in the graph.
+                        </InfoTip>
+                      )}
+                      {opt.value === 'sh:BlankNode' && (
+                        <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                          The value is an anonymous node with no global identifier. Blank nodes
+                          are embedded sub-structures (e.g. an address block) that exist only
+                          inside this graph and cannot be referenced from outside.
+                        </InfoTip>
+                      )}
+                      {opt.value === 'sh:Literal' && (
+                        <InfoTip align="left" placement="top" className="!w-[0.85rem] !h-[0.85rem] !text-[9px] lowercase">
+                          The value is a plain data value such as a string, number, date, or
+                          boolean, not a link to another resource. Examples:
+                          <span className="font-mono"> "Alice"</span>,
+                          <span className="font-mono"> 42</span>,
+                          <span className="font-mono"> true</span>.
+                        </InfoTip>
+                      )}
                     </button>
                   ))}
                 </div>
-              )}
-              <input
-                type="text"
-                value={draft.node ?? ''}
-                onChange={e => patchDraft({ node: e.target.value || undefined })}
-                placeholder={
-                  state.completedShapes.length > 0
-                    ? 'or type a shape CURIE, e.g. ex:AddressShape'
-                    : `e.g. ${pfx}:AddressShape`
-                }
-                className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
-              />
-            </ConstraintSection>
+                {draft.nodeKind === 'sh:Literal' && (
+                  <p className="text-[10px] text-amber-600 mt-1.5">
+                    Tip: pair with sh:pattern to ensure the value is a string before the regex runs.
+                  </p>
+                )}
+              </ConstraintSection>
+            </AccordionSection>
+
+            {/* ── Cardinality ── */}
+            <AccordionSection
+              title="Cardinality"
+              count={countFor('cardinality')}
+              isOpen={openSection === 'cardinality'}
+              onToggle={() => toggleSection('cardinality')}
+            >
+              <ConstraintSection
+                label="How many values must this property have?"
+                info="Cardinality controls whether the property is required and how many values are allowed for each target node."
+              >
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    { label: 'Exactly one',  min: '1', max: '1' },
+                    { label: 'At least one', min: '1', max: '' },
+                    { label: 'At most one',  min: '', max: '1' },
+                    { label: 'Optional',     min: '', max: '' },
+                  ].map(opt => {
+                    const active = (draft.minCount || undefined) === (opt.min || undefined) && (draft.maxCount || undefined) === (opt.max || undefined)
+                    return (
+                      <button
+                        key={opt.label}
+                        onClick={() => patchDraft({ minCount: opt.min || undefined, maxCount: opt.max || undefined })}
+                        className={`text-[11px] px-3 py-1 rounded-full border transition-colors
+                          ${active ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        `}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberInput
+                    label="Custom min"
+                    value={draft.minCount}
+                    onChange={v => patchDraft({ minCount: v })}
+                    info="sh:minCount is the smallest number of values this property must have."
+                  />
+                  <NumberInput
+                    label="Custom max"
+                    value={draft.maxCount}
+                    onChange={v => patchDraft({ maxCount: v })}
+                    info="sh:maxCount is the largest number of values this property may have."
+                  />
+                </div>
+              </ConstraintSection>
+            </AccordionSection>
+
+            {/* ── Value Range ── */}
+            <AccordionSection
+              title="Value Range"
+              count={countFor('valueRange')}
+              isOpen={openSection === 'valueRange'}
+              onToggle={() => toggleSection('valueRange')}
+            >
+              <ConstraintSection
+                label="Is there a numeric range? (for integers / decimals)"
+                info="Range constraints compare numeric or date-like values against lower and upper bounds."
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberInput
+                    label="Min value >="
+                    value={draft.minInclusive}
+                    onChange={v => patchDraft({ minInclusive: v })}
+                    info="sh:minInclusive means the value must be this number or higher."
+                  />
+                  <NumberInput
+                    label="Max value <="
+                    value={draft.maxInclusive}
+                    onChange={v => patchDraft({ maxInclusive: v })}
+                    info="sh:maxInclusive means the value must be this number or lower."
+                  />
+                </div>
+              </ConstraintSection>
+            </AccordionSection>
+
+            {/* ── String-based ── */}
+            <AccordionSection
+              title="String-based"
+              count={countFor('stringBased')}
+              isOpen={openSection === 'stringBased'}
+              onToggle={() => toggleSection('stringBased')}
+            >
+              {/* Pattern */}
+              <ConstraintSection
+                label="Does the value need to match a specific format? (regex)"
+                info="sh:pattern checks text with a regular expression, which is useful for emails, IDs, codes, and similar formats."
+              >
+                <input
+                  type="text"
+                  value={draft.pattern ?? ''}
+                  onChange={e => patchDraft({ pattern: e.target.value || undefined })}
+                  placeholder="e.g. ^[\w.]+@[\w.]+\.[a-z]{2,}$ for email"
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
+              </ConstraintSection>
+
+              {/* String length */}
+              <ConstraintSection
+                label="Is there a character length limit?"
+                info="Length constraints count the characters in a literal text value."
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberInput
+                    label="Min length"
+                    value={draft.minLength}
+                    onChange={v => patchDraft({ minLength: v })}
+                    info="sh:minLength is the fewest characters the value may contain."
+                  />
+                  <NumberInput
+                    label="Max length"
+                    value={draft.maxLength}
+                    onChange={v => patchDraft({ maxLength: v })}
+                    info="sh:maxLength is the most characters the value may contain."
+                  />
+                </div>
+              </ConstraintSection>
+            </AccordionSection>
+
+            {/* ── Shape-based ── */}
+            <AccordionSection
+              title="Shape-based"
+              count={countFor('shapeBased')}
+              isOpen={openSection === 'shapeBased'}
+              onToggle={() => toggleSection('shapeBased')}
+            >
+              <ConstraintSection
+                label="Must the value conform to another shape? (sh:node)"
+                info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes — e.g. every worksFor value must match UniversityShape."
+              >
+                {state.completedShapes.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {state.completedShapes.map(cs => (
+                      <button
+                        key={cs.shapeName}
+                        onClick={() => patchDraft({ node: draft.node === cs.shapeName ? undefined : cs.shapeName })}
+                        className={`text-[11px] px-3 py-1 rounded-full border transition-colors mono
+                          ${draft.node === cs.shapeName
+                            ? 'bg-zinc-900 text-white border-zinc-900'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        `}
+                      >
+                        {pfx}:{cs.shapeName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={draft.node ?? ''}
+                  onChange={e => patchDraft({ node: e.target.value || undefined })}
+                  placeholder={
+                    state.completedShapes.length > 0
+                      ? 'or type a shape CURIE, e.g. ex:AddressShape'
+                      : `e.g. ${pfx}:AddressShape`
+                  }
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
+              </ConstraintSection>
+            </AccordionSection>
+
+            {/* ── Other ── */}
+            <AccordionSection
+              title="Other"
+              count={countFor('other')}
+              isOpen={openSection === 'other'}
+              onToggle={() => toggleSection('other')}
+            >
+              <ConstraintSection
+                label="Must the value be one of a fixed list? (sh:in)"
+                info="sh:in means the value must match one item from the allowed list, such as active, inactive, or pending."
+              >
+                <input
+                  type="text"
+                  value={draft.in ?? ''}
+                  onChange={e => patchDraft({ in: e.target.value || undefined })}
+                  placeholder="Comma-separated: active, inactive, pending"
+                  className="w-full h-8 px-3 rounded-md border border-zinc-200 text-sm mono focus:outline-none focus:border-zinc-400"
+                />
+              </ConstraintSection>
+            </AccordionSection>
 
           </div>
 
@@ -393,6 +465,57 @@ export function Step4Constraints({ state, update }: Props) {
 }
 
 // ─── Small reusable sub-components ───────────────────────────────────────────
+
+function AccordionSection({
+  title,
+  count,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title:    string
+  count:    number
+  isOpen:   boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="border border-zinc-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors
+          ${isOpen ? 'bg-zinc-50' : 'bg-white hover:bg-zinc-50'}
+        `}
+      >
+        <span className="text-sm font-semibold text-zinc-800">{title}</span>
+        <span className="flex items-center gap-2">
+          {count > 0 && (
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5 leading-none">
+              {count}
+            </span>
+          )}
+          <svg
+            className={`w-4 h-4 text-zinc-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            aria-hidden="true"
+          >
+            <path d="M6 8l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {isOpen && (
+        <div className="px-4 pb-4 pt-3 space-y-5 border-t border-zinc-100 fade-up">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ConstraintSection({
   label,

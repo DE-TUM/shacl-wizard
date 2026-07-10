@@ -44,6 +44,12 @@ class PropertyConstraints(CamelModel):
     language_in: str | None = Field(default=None, alias="languageIn")
     has_value: str | None = Field(default=None, alias="hasValue")
     unique_lang: str | None = Field(default=None, alias="uniqueLang")  # "true" when enabled
+    # Property-pair constraints — each references another property path in the
+    # same NodeShape.
+    equals: str | None = None
+    disjoint: str | None = None
+    less_than: str | None = Field(default=None, alias="lessThan")
+    less_than_or_equals: str | None = Field(default=None, alias="lessThanOrEquals")
     # sh:message — a human-readable annotation, NOT one of the 28 SHACL Core
     # constraint components. Customises the validation report text for this
     # property shape; never counted toward the coverage goal.

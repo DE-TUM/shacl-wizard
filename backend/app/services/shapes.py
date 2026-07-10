@@ -160,6 +160,15 @@ def _add_constraints(
         graph.add((subject, SH.hasValue, Literal(c.has_value.strip())))
     if c.unique_lang and c.unique_lang.strip().lower() == "true":
         graph.add((subject, SH.uniqueLang, Literal(True)))
+    # Property-pair constraints — the value is another property path (a predicate).
+    if c.equals:
+        graph.add((subject, SH.equals, _resource(c.equals, base_uri, prefix, detected_prefixes)))
+    if c.disjoint:
+        graph.add((subject, SH.disjoint, _resource(c.disjoint, base_uri, prefix, detected_prefixes)))
+    if c.less_than:
+        graph.add((subject, SH.lessThan, _resource(c.less_than, base_uri, prefix, detected_prefixes)))
+    if c.less_than_or_equals:
+        graph.add((subject, SH.lessThanOrEquals, _resource(c.less_than_or_equals, base_uri, prefix, detected_prefixes)))
     if c.language_in:
         _add_rdf_list(graph, subject, SH.languageIn, [Literal(tag) for tag in _split_csv(c.language_in)])
     # sh:message is a shape-level annotation, NOT one of the 28 SHACL Core

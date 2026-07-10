@@ -49,6 +49,11 @@ export interface PropertyConstraints {
   languageIn?:   string   // comma-separated language tags
   hasValue?:     string   // sh:hasValue — a value the property must include
   uniqueLang?:   string   // sh:uniqueLang — 'true' when enabled
+  // Property-pair constraints — each references another property path in the shape
+  equals?:           string
+  disjoint?:         string
+  lessThan?:         string
+  lessThanOrEquals?: string
   // sh:message — a human-readable annotation for the validation report, NOT one
   // of the 28 SHACL Core constraint components. Never counted toward coverage.
   message?:      string

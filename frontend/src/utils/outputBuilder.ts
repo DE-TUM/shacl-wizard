@@ -130,6 +130,10 @@ function extraPrefixLines(
       const c = prop.constraints
       if (c.class) scan(c.class)
       if (c.node)  scan(c.node)
+      if (c.equals)           scan(c.equals)
+      if (c.disjoint)         scan(c.disjoint)
+      if (c.lessThan)         scan(c.lessThan)
+      if (c.lessThanOrEquals) scan(c.lessThanOrEquals)
     }
   }
 
@@ -238,6 +242,10 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
   }
   if (c.hasValue)   lines.push(`        sh:hasValue "${ttlEscape(c.hasValue)}" ;`)
   if (c.uniqueLang === 'true') lines.push('        sh:uniqueLang true ;')
+  if (c.equals)           lines.push(`        sh:equals ${p(c.equals)} ;`)
+  if (c.disjoint)         lines.push(`        sh:disjoint ${p(c.disjoint)} ;`)
+  if (c.lessThan)         lines.push(`        sh:lessThan ${p(c.lessThan)} ;`)
+  if (c.lessThanOrEquals) lines.push(`        sh:lessThanOrEquals ${p(c.lessThanOrEquals)} ;`)
   // sh:message — annotation only, not a validating constraint.
   if (c.message) lines.push(`        sh:message "${ttlEscape(c.message)}" ;`)
   return lines
@@ -340,6 +348,10 @@ function buildJsonLdProperty(prop: PropertyShape, prefix: string): Record<string
   }
   if (c.hasValue) obj['sh:hasValue'] = c.hasValue
   if (c.uniqueLang === 'true') obj['sh:uniqueLang'] = { '@value': true, '@type': 'xsd:boolean' }
+  if (c.equals)           obj['sh:equals']           = { '@id': p(c.equals) }
+  if (c.disjoint)         obj['sh:disjoint']         = { '@id': p(c.disjoint) }
+  if (c.lessThan)         obj['sh:lessThan']         = { '@id': p(c.lessThan) }
+  if (c.lessThanOrEquals) obj['sh:lessThanOrEquals'] = { '@id': p(c.lessThanOrEquals) }
   if (c.message) obj['sh:message'] = c.message
 
   return obj
@@ -438,6 +450,10 @@ export function buildRdfXml(state: WizardState, completedShapes: CompletedShape[
       if (c.maxLength)    lines.push(`        <sh:maxLength rdf:datatype="xsd:integer">${c.maxLength}</sh:maxLength>`)
       if (c.hasValue)     lines.push(`        <sh:hasValue>${xmlEscape(c.hasValue)}</sh:hasValue>`)
       if (c.uniqueLang === 'true') lines.push('        <sh:uniqueLang rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</sh:uniqueLang>')
+      if (c.equals)           lines.push(`        <sh:equals rdf:resource="${toUri(c.equals)}"/>`)
+      if (c.disjoint)         lines.push(`        <sh:disjoint rdf:resource="${toUri(c.disjoint)}"/>`)
+      if (c.lessThan)         lines.push(`        <sh:lessThan rdf:resource="${toUri(c.lessThan)}"/>`)
+      if (c.lessThanOrEquals) lines.push(`        <sh:lessThanOrEquals rdf:resource="${toUri(c.lessThanOrEquals)}"/>`)
       lines.push('      </sh:PropertyShape>')
       lines.push('    </sh:property>')
     }

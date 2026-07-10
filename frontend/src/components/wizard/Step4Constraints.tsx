@@ -27,6 +27,7 @@ const CATEGORY_KEYS: Record<string, (keyof PropertyConstraints)[]> = {
   cardinality: ['minCount', 'maxCount'],
   valueRange:  ['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'],
   stringBased: ['pattern', 'minLength', 'maxLength', 'languageIn', 'uniqueLang'],
+  propertyPair: ['equals', 'disjoint', 'lessThan', 'lessThanOrEquals'],
   shapeBased:  ['node'],
   other:       ['in', 'hasValue'],
 }
@@ -64,8 +65,14 @@ export function Step4Constraints({ state, update }: Props) {
     }).length
 
   // Cross-field validation (Phase 0.5). Warns but never blocks — SHACL permits
-  // writing an unsatisfiable shape.
-  const issues = detectConstraintIssues(draft)
+  // writing an unsatisfiable shape. ownPath enables the property-pair self-
+  // reference checks (C13/R5).
+  const issues = detectConstraintIssues(draft, activeProperty?.path)
+
+  // Other properties in this shape, offered as property-pair comparison targets.
+  const otherProps = state.properties
+    .filter(p => p.id !== activeId)
+    .map(p => p.path)
 
   // Worst issue level touching a given category, for the section header marker.
   const sectionIssueLevel = (id: string): IssueLevel | null => {
@@ -465,6 +472,52 @@ export function Step4Constraints({ state, update }: Props) {
               </ConstraintSection>
             </AccordionSection>
 
+            {/* ── Property Pair ── */}
+            <AccordionSection
+              title="Property Pair"
+              count={countFor('propertyPair')}
+              issueLevel={sectionIssueLevel('propertyPair')}
+              isOpen={openSection === 'propertyPair'}
+              onToggle={() => toggleSection('propertyPair')}
+            >
+              {otherProps.length === 0 ? (
+                <p className="text-xs text-zinc-400">
+                  Add another property in Step 3 to compare this one against.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <PropertyPairSelect
+                    label="Same values as another property? (sh:equals)"
+                    info="sh:equals requires this property to have exactly the same set of values as the chosen property."
+                    value={draft.equals}
+                    options={otherProps}
+                    onChange={v => patchDraft({ equals: v })}
+                  />
+                  <PropertyPairSelect
+                    label="No shared values with another property? (sh:disjoint)"
+                    info="sh:disjoint requires this property and the chosen property to share no value in common."
+                    value={draft.disjoint}
+                    options={otherProps}
+                    onChange={v => patchDraft({ disjoint: v })}
+                  />
+                  <PropertyPairSelect
+                    label="Strictly less than another property? (sh:lessThan)"
+                    info="sh:lessThan requires each value of this property to be strictly less than each value of the chosen property (e.g. startDate < endDate)."
+                    value={draft.lessThan}
+                    options={otherProps}
+                    onChange={v => patchDraft({ lessThan: v })}
+                  />
+                  <PropertyPairSelect
+                    label="Less than or equal to another property? (sh:lessThanOrEquals)"
+                    info="sh:lessThanOrEquals requires each value of this property to be less than or equal to each value of the chosen property."
+                    value={draft.lessThanOrEquals}
+                    options={otherProps}
+                    onChange={v => patchDraft({ lessThanOrEquals: v })}
+                  />
+                </div>
+              )}
+            </AccordionSection>
+
             {/* ── Shape-based ── */}
             <AccordionSection
               title="Shape-based"
@@ -778,6 +831,37 @@ function ConstraintSection({
         )}
       </p>
       {children}
+    </div>
+  )
+}
+
+function PropertyPairSelect({ label, info, value, options, onChange }: {
+  label:    string
+  info?:    string
+  value:    string | undefined
+  options:  string[]
+  onChange: (v: string | undefined) => void
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+        {label}
+        {info && (
+          <InfoTip align="left" placement="top" className="lowercase">
+            {info}
+          </InfoTip>
+        )}
+      </label>
+      <select
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value || undefined)}
+        className="w-full h-8 px-2 rounded-md border border-zinc-200 text-sm mono bg-white focus:outline-none focus:border-zinc-400"
+      >
+        <option value="">— none —</option>
+        {options.map(opt => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
     </div>
   )
 }

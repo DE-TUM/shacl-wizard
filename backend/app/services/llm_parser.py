@@ -42,6 +42,10 @@ LLM_SCHEMA: dict[str, Any] = {
                             "languageIn": {"type": "string"},
                             "hasValue": {"type": "string"},
                             "uniqueLang": {"type": "string"},
+                            "equals": {"type": "string"},
+                            "disjoint": {"type": "string"},
+                            "lessThan": {"type": "string"},
+                            "lessThanOrEquals": {"type": "string"},
                             "message": {"type": "string"},
                         },
                     },
@@ -63,12 +67,18 @@ Return JSON matching the schema exactly. Constraint values must be strings
 because the frontend stores wizard input as strings. Only use these constraint
 fields: minCount, maxCount, datatype, nodeKind, pattern, minInclusive,
 maxInclusive, minExclusive, maxExclusive, minLength, maxLength, in, class, node,
-languageIn, hasValue, uniqueLang, message.
+languageIn, hasValue, uniqueLang, equals, disjoint, lessThan,
+lessThanOrEquals, message.
 
 "hasValue" is a single required value the property must include (e.g. "must
 have the value 'active'"). "uniqueLang" is the string "true" only when the user
 says each language may appear at most once among the values (e.g. "at most one
 label per language"); otherwise omit it.
+
+The property-pair fields (equals, disjoint, lessThan, lessThanOrEquals) each
+take ANOTHER property's path from the same shape as their value, e.g. "startDate
+must be before endDate" -> on startDate set lessThan to "endDate". Only use them
+when the user compares one property to another property.
 
 "message" is NOT a validating constraint — it is an optional custom
 sh:message string shown in the validation report when this property is

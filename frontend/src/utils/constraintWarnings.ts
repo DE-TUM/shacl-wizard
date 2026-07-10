@@ -6,12 +6,6 @@
 // project's Phase 0.5 notes; each case is tagged with its audit id (C#/R#).
 //
 // New detectors are added as later phases introduce the fields they need.
-// Still deferred (fields land in Phase 4):
-//   C11 equals & disjoint on same path
-//   C12 equals & lessThan[OrEquals] on same path
-//   C13 lessThan / disjoint referencing own path
-//   R2  lessThan & lessThanOrEquals on same path
-//   R5  equals / lessThanOrEquals on own path
 
 import type { PropertyConstraints } from '@/types'
 
@@ -39,7 +33,13 @@ function bareNodeKind(value: string | undefined): string | undefined {
   return value.startsWith('sh:') ? value.slice(3) : value
 }
 
-export function detectConstraintIssues(c: PropertyConstraints): ConstraintIssue[] {
+// Two property paths refer to the same property (targets come from a dropdown
+// of exact paths, so a trimmed string comparison is exact).
+function samePath(a: string | undefined, b: string | undefined): boolean {
+  return !!a && !!b && a.trim() === b.trim()
+}
+
+export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string): ConstraintIssue[] {
   const issues: ConstraintIssue[] = []
   const nk = bareNodeKind(c.nodeKind)
 
@@ -244,6 +244,80 @@ export function detectConstraintIssues(c: PropertyConstraints): ConstraintIssue[
       id: 'R3', level: 'redundant', fields: ['uniqueLang', 'maxCount'],
       message: 'uniqueLang has no effect when maxCount is 1',
       why: 'sh:uniqueLang only matters when a property can hold several values; with at most one value there can never be a duplicate language tag.',
+    })
+  }
+
+  // ── Property-pair constraints (Phase 4) ──────────────────────────────────
+  // C11: equals & disjoint on the same target property.
+  if (samePath(c.equals, c.disjoint)) {
+    issues.push({
+      id: 'C11', level: 'contradiction', fields: ['equals', 'disjoint'],
+      message: `equals and disjoint both target ${c.equals}`,
+      why: 'sh:equals requires identical value sets while sh:disjoint requires no shared value, so both can only hold when the property has no values at all.',
+    })
+  }
+  // C12: equals & lessThan on the same target property.
+  if (samePath(c.equals, c.lessThan)) {
+    issues.push({
+      id: 'C12', level: 'contradiction', fields: ['equals', 'lessThan'],
+      message: `equals and lessThan both target ${c.equals}`,
+      why: 'A value cannot be equal to and strictly less than the same value, so sh:equals and sh:lessThan on the same property can never both hold.',
+    })
+  }
+  // C13: lessThan / disjoint referencing this property's own path.
+  if (samePath(c.lessThan, ownPath)) {
+    issues.push({
+      id: 'C13', level: 'contradiction', fields: ['lessThan'],
+      message: 'lessThan points at this property itself',
+      why: 'A value cannot be strictly less than itself, so comparing the property to its own path can never be satisfied.',
+    })
+  }
+  if (samePath(c.disjoint, ownPath)) {
+    issues.push({
+      id: 'C13', level: 'contradiction', fields: ['disjoint'],
+      message: 'disjoint points at this property itself',
+      why: 'A non-empty set always shares its values with itself, so a property cannot be disjoint from its own path.',
+    })
+  }
+  // R2: lessThan & lessThanOrEquals on the same target property.
+  if (samePath(c.lessThan, c.lessThanOrEquals)) {
+    issues.push({
+      id: 'R2', level: 'redundant', fields: ['lessThan', 'lessThanOrEquals'],
+      message: `lessThan and lessThanOrEquals both target ${c.lessThan}`,
+      why: 'sh:lessThan already implies sh:lessThanOrEquals for the same property, so the weaker one is redundant.',
+    })
+  }
+  // R5: equals / lessThanOrEquals referencing this property's own path.
+  if (samePath(c.equals, ownPath)) {
+    issues.push({
+      id: 'R5', level: 'redundant', fields: ['equals'],
+      message: 'equals points at this property itself',
+      why: 'A property always equals itself, so this constraint is trivially satisfied and has no effect.',
+    })
+  }
+  if (samePath(c.lessThanOrEquals, ownPath)) {
+    issues.push({
+      id: 'R5', level: 'redundant', fields: ['lessThanOrEquals'],
+      message: 'lessThanOrEquals points at this property itself',
+      why: 'Every value is less than or equal to itself, so this constraint is trivially satisfied and has no effect.',
+    })
+  }
+  // R6 (new in Phase 4): lessThan & disjoint on the same target — disjoint is
+  // implied by lessThan (a<b means a≠b), so it is redundant.
+  if (samePath(c.lessThan, c.disjoint)) {
+    issues.push({
+      id: 'R6', level: 'redundant', fields: ['lessThan', 'disjoint'],
+      message: `disjoint is redundant with lessThan (both target ${c.lessThan})`,
+      why: 'sh:lessThan already guarantees the values differ from the target, so sh:disjoint on the same property adds nothing.',
+    })
+  }
+  // R7 (new in Phase 4): equals & lessThanOrEquals on the same target — implied
+  // by equals (a=b means a≤b), so lessThanOrEquals is redundant.
+  if (samePath(c.equals, c.lessThanOrEquals)) {
+    issues.push({
+      id: 'R7', level: 'redundant', fields: ['equals', 'lessThanOrEquals'],
+      message: `lessThanOrEquals is redundant with equals (both target ${c.equals})`,
+      why: 'sh:equals forces identical values, which already satisfies sh:lessThanOrEquals on the same property.',
     })
   }
 

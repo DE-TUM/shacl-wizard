@@ -601,6 +601,17 @@ export function Step4Constraints({ state, update }: Props) {
                   </div>
                 </ConstraintSection>
 
+                {/* Plain-language explainer for the chosen mode */}
+                {logicalMode !== 'none' && (
+                  <p className="text-[11px] text-zinc-600 bg-zinc-50 rounded-md px-2.5 py-1.5 border border-zinc-100 leading-snug">
+                    {logicalMode === 'and' && 'A value passes only if it satisfies every condition below.'}
+                    {logicalMode === 'or' && 'A value passes if it satisfies at least one of the conditions below.'}
+                    {logicalMode === 'xone' && 'A value passes only if it satisfies exactly one of the conditions below (no more, no less).'}
+                    {logicalMode === 'not' && 'A value passes only if it does NOT satisfy the condition below.'}
+                    {logicalMode === 'qualified' && 'Describe a condition, then require how many of this property’s values must match it (min/max).'}
+                  </p>
+                )}
+
                 {/* AND / OR / XONE — a list of condition groups */}
                 {listKey && (
                   <div className="space-y-2">
@@ -608,6 +619,7 @@ export function Step4Constraints({ state, update }: Props) {
                       <SubShapeEditor
                         key={i}
                         title={`Condition ${i + 1}`}
+                        info="One alternative the value can be checked against. Set the rules a value must meet to satisfy this particular condition."
                         value={group}
                         onChange={patch => updateGroup(i, patch)}
                         onRemove={() => removeGroup(i)}
@@ -627,6 +639,7 @@ export function Step4Constraints({ state, update }: Props) {
                 {logicalMode === 'not' && (
                   <SubShapeEditor
                     title="Value must NOT match"
+                    info="Describe what the value is forbidden to be. A value is valid only when it does NOT meet the rules you set here."
                     value={draft.not ?? {}}
                     onChange={patch => updateSingle('not', patch)}
                     pfx={pfx}
@@ -638,6 +651,7 @@ export function Step4Constraints({ state, update }: Props) {
                   <div className="space-y-2">
                     <SubShapeEditor
                       title="Values matching this condition"
+                      info="Describe the values you want to count. Then, below, require how many of this property’s values must match — e.g. “at least 2 values that are ex:Manager”."
                       value={draft.qualifiedValueShape ?? {}}
                       onChange={patch => updateSingle('qualifiedValueShape', patch)}
                       pfx={pfx}
@@ -774,9 +788,6 @@ export function Step4Constraints({ state, update }: Props) {
                       : 'bg-amber-50 border-amber-200 text-amber-700'}
                   `}
                 >
-                  <span className="mt-px shrink-0" aria-hidden="true">
-                    {issue.level === 'contradiction' ? '⚠' : 'ⓘ'}
-                  </span>
                   <span className="flex-1 leading-snug">
                     <span className="font-semibold">
                       {issue.level === 'contradiction' ? 'Contradiction: ' : 'Redundant: '}
@@ -982,8 +993,9 @@ function ConstraintSection({
 
 // Compact editor for a one-level nested sub-shape used inside a logical /
 // qualified constraint. Offers the most common value-level controls.
-function SubShapeEditor({ title, value, onChange, onRemove, pfx }: {
+function SubShapeEditor({ title, info, value, onChange, onRemove, pfx }: {
   title:    string
+  info?:    string
   value:    SubShape
   onChange: (patch: Partial<SubShape>) => void
   onRemove?: () => void
@@ -992,7 +1004,14 @@ function SubShapeEditor({ title, value, onChange, onRemove, pfx }: {
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">{title}</span>
+        <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+          {title}
+          {info && (
+            <InfoTip align="left" placement="top" className="lowercase">
+              {info}
+            </InfoTip>
+          )}
+        </span>
         {onRemove && (
           <button onClick={onRemove} className="text-zinc-400 hover:text-red-600 text-xs" title="Remove condition">
             ✕
@@ -1000,34 +1019,52 @@ function SubShapeEditor({ title, value, onChange, onRemove, pfx }: {
         )}
       </div>
 
+      <p className="text-[10px] text-zinc-400">Fill only the rules you need — blank fields are ignored.</p>
+
       {/* datatype */}
-      <div className="flex flex-wrap gap-1">
-        {DATATYPE_OPTIONS.map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => onChange({ datatype: value.datatype === opt.value ? undefined : opt.value })}
-            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
-              ${value.datatype === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-            `}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="space-y-1">
+        <p className="text-[10px] text-zinc-400 flex items-center gap-1.5">
+          Value type
+          <InfoTip align="left" placement="top" className="lowercase">
+            The kind of literal the value must be — text, a number, a date, and so on. Leave unset to allow any type.
+          </InfoTip>
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {DATATYPE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => onChange({ datatype: value.datatype === opt.value ? undefined : opt.value })}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
+                ${value.datatype === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+              `}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* nodeKind */}
-      <div className="flex flex-wrap gap-1">
-        {NODEKIND_OPTIONS.map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => onChange({ nodeKind: value.nodeKind === opt.value ? undefined : opt.value })}
-            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
-              ${value.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-            `}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="space-y-1">
+        <p className="text-[10px] text-zinc-400 flex items-center gap-1.5">
+          Resource or value?
+          <InfoTip align="left" placement="top" className="lowercase">
+            Whether the value must be a named resource (IRI), a blank node, or a plain literal value. Leave unset to allow any.
+          </InfoTip>
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {NODEKIND_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => onChange({ nodeKind: value.nodeKind === opt.value ? undefined : opt.value })}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
+                ${value.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+              `}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">

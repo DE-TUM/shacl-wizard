@@ -1,4 +1,4 @@
-import type { WizardState, CompletedShape, PropertyShape, PropertyConstraints } from '@/types'
+import type { WizardState, CompletedShape, PropertyShape, PropertyConstraints, SubShape } from '@/types'
 
 // Well-known namespace URIs used to emit @prefix declarations for property
 // paths that carry a foreign CURIE (e.g. "schema:name", "foaf:Person").
@@ -212,6 +212,47 @@ function buildShapeBlock(shape: ShapeSource, prefix: string): string[] {
   return lines
 }
 
+// Serialise a one-level nested sub-shape as an inline Turtle blank node:
+//   [ sh:datatype xsd:string ; sh:minInclusive 0 ]
+function subShapeInline(sub: SubShape, prefix: string): string {
+  const p = (local: string) => local.includes(':') ? local : `${prefix}:${local}`
+  const parts: string[] = []
+  if (sub.datatype)     parts.push(`sh:datatype ${sub.datatype}`)
+  if (sub.nodeKind)     parts.push(`sh:nodeKind ${shNodeKind(sub.nodeKind)}`)
+  if (sub.class)        parts.push(`sh:class ${p(sub.class)}`)
+  if (sub.node)         parts.push(`sh:node ${sub.node.includes(':') ? sub.node : p(sub.node)}`)
+  if (sub.pattern)      parts.push(`sh:pattern "${anchorPattern(sub.pattern)}"`)
+  if (sub.minInclusive) parts.push(`sh:minInclusive ${sub.minInclusive}`)
+  if (sub.maxInclusive) parts.push(`sh:maxInclusive ${sub.maxInclusive}`)
+  if (sub.minExclusive) parts.push(`sh:minExclusive ${sub.minExclusive}`)
+  if (sub.maxExclusive) parts.push(`sh:maxExclusive ${sub.maxExclusive}`)
+  if (sub.minLength)    parts.push(`sh:minLength ${sub.minLength}`)
+  if (sub.maxLength)    parts.push(`sh:maxLength ${sub.maxLength}`)
+  if (sub.in)           parts.push(`sh:in ( ${sub.in.split(',').map((v: string) => `"${v.trim()}"`).join(' ')} )`)
+  if (sub.hasValue)     parts.push(`sh:hasValue "${ttlEscape(sub.hasValue)}"`)
+  if (sub.languageIn)   parts.push(`sh:languageIn ( ${sub.languageIn.split(',').map((t: string) => `"${t.trim()}"`).join(' ')} )`)
+  return parts.length ? `[ ${parts.join(' ; ')} ]` : '[ ]'
+}
+
+// Serialise a sub-shape as a JSON-LD node object.
+function subShapeJsonLd(sub: SubShape, prefix: string): Record<string, unknown> {
+  const p = (local: string) => local.includes(':') ? local : `${prefix}:${local}`
+  const obj: Record<string, unknown> = {}
+  const nums = ['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'] as const
+  for (const k of nums) if (sub[k]) obj[`sh:${k}`] = { '@value': sub[k], '@type': 'xsd:decimal' }
+  const ints = ['minLength', 'maxLength'] as const
+  for (const k of ints) if (sub[k]) obj[`sh:${k}`] = { '@value': sub[k], '@type': 'xsd:integer' }
+  if (sub.datatype)   obj['sh:datatype'] = { '@id': sub.datatype }
+  if (sub.nodeKind)   obj['sh:nodeKind'] = { '@id': shNodeKind(sub.nodeKind) }
+  if (sub.class)      obj['sh:class']    = { '@id': p(sub.class) }
+  if (sub.node)       obj['sh:node']     = { '@id': sub.node.includes(':') ? sub.node : p(sub.node) }
+  if (sub.pattern)    obj['sh:pattern']  = anchorPattern(sub.pattern)
+  if (sub.in)         obj['sh:in'] = { '@list': sub.in.split(',').map((v: string) => v.trim()) }
+  if (sub.hasValue)   obj['sh:hasValue'] = sub.hasValue
+  if (sub.languageIn) obj['sh:languageIn'] = { '@list': sub.languageIn.split(',').map((t: string) => t.trim()) }
+  return obj
+}
+
 function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] {
   const p = (local: string) => local.includes(':') ? local : `${prefix}:${local}`
   const lines: string[] = []
@@ -246,6 +287,18 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
   if (c.disjoint)         lines.push(`        sh:disjoint ${p(c.disjoint)} ;`)
   if (c.lessThan)         lines.push(`        sh:lessThan ${p(c.lessThan)} ;`)
   if (c.lessThanOrEquals) lines.push(`        sh:lessThanOrEquals ${p(c.lessThanOrEquals)} ;`)
+  // Logical / qualified constraints (Phase 5) — one level of nested sub-shapes.
+  const logicalList = (groups: SubShape[] | undefined): string =>
+    (groups ?? []).map(g => subShapeInline(g, prefix)).join(' ')
+  if (c.and && c.and.length)   lines.push(`        sh:and ( ${logicalList(c.and)} ) ;`)
+  if (c.or && c.or.length)     lines.push(`        sh:or ( ${logicalList(c.or)} ) ;`)
+  if (c.xone && c.xone.length) lines.push(`        sh:xone ( ${logicalList(c.xone)} ) ;`)
+  if (c.not)                   lines.push(`        sh:not ${subShapeInline(c.not, prefix)} ;`)
+  if (c.qualifiedValueShape) {
+    lines.push(`        sh:qualifiedValueShape ${subShapeInline(c.qualifiedValueShape, prefix)} ;`)
+    if (c.qualifiedMinCount) lines.push(`        sh:qualifiedMinCount ${c.qualifiedMinCount} ;`)
+    if (c.qualifiedMaxCount) lines.push(`        sh:qualifiedMaxCount ${c.qualifiedMaxCount} ;`)
+  }
   // sh:message — annotation only, not a validating constraint.
   if (c.message) lines.push(`        sh:message "${ttlEscape(c.message)}" ;`)
   return lines
@@ -352,6 +405,15 @@ function buildJsonLdProperty(prop: PropertyShape, prefix: string): Record<string
   if (c.disjoint)         obj['sh:disjoint']         = { '@id': p(c.disjoint) }
   if (c.lessThan)         obj['sh:lessThan']         = { '@id': p(c.lessThan) }
   if (c.lessThanOrEquals) obj['sh:lessThanOrEquals'] = { '@id': p(c.lessThanOrEquals) }
+  if (c.and && c.and.length)   obj['sh:and']  = { '@list': c.and.map((g: SubShape) => subShapeJsonLd(g, prefix)) }
+  if (c.or && c.or.length)     obj['sh:or']   = { '@list': c.or.map((g: SubShape) => subShapeJsonLd(g, prefix)) }
+  if (c.xone && c.xone.length) obj['sh:xone'] = { '@list': c.xone.map((g: SubShape) => subShapeJsonLd(g, prefix)) }
+  if (c.not)                   obj['sh:not']  = subShapeJsonLd(c.not, prefix)
+  if (c.qualifiedValueShape) {
+    obj['sh:qualifiedValueShape'] = subShapeJsonLd(c.qualifiedValueShape, prefix)
+    if (c.qualifiedMinCount) obj['sh:qualifiedMinCount'] = { '@value': c.qualifiedMinCount, '@type': 'xsd:integer' }
+    if (c.qualifiedMaxCount) obj['sh:qualifiedMaxCount'] = { '@value': c.qualifiedMaxCount, '@type': 'xsd:integer' }
+  }
   if (c.message) obj['sh:message'] = c.message
 
   return obj

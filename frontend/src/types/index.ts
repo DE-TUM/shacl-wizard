@@ -31,6 +31,25 @@ export const TARGET_OPTIONS = [
 
 // ─── Constraint types ─────────────────────────────────────────────────────────
 
+// A one-level nested shape used inside a logical / qualified constraint.
+// Value-level constraints only — no path, no cardinality, no further nesting.
+export interface SubShape {
+  datatype?:     string
+  nodeKind?:     string
+  class?:        string
+  node?:         string
+  pattern?:      string
+  minInclusive?: string
+  maxInclusive?: string
+  minExclusive?: string
+  maxExclusive?: string
+  minLength?:    string
+  maxLength?:    string
+  in?:           string
+  hasValue?:     string
+  languageIn?:   string
+}
+
 export interface PropertyConstraints {
   minCount?:     string
   maxCount?:     string
@@ -54,6 +73,14 @@ export interface PropertyConstraints {
   disjoint?:         string
   lessThan?:         string
   lessThanOrEquals?: string
+  // Logical / qualified constraints (one level of nesting)
+  and?:                 SubShape[]
+  or?:                  SubShape[]
+  xone?:                SubShape[]
+  not?:                 SubShape
+  qualifiedValueShape?: SubShape
+  qualifiedMinCount?:   string
+  qualifiedMaxCount?:   string
   // sh:message — a human-readable annotation for the validation report, NOT one
   // of the 28 SHACL Core constraint components. Never counted toward coverage.
   message?:      string

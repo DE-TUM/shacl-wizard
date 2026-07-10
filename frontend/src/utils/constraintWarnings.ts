@@ -321,5 +321,16 @@ export function detectConstraintIssues(c: PropertyConstraints, ownPath?: string)
     })
   }
 
+  // ── C15 (Phase 5): qualifiedMinCount > qualifiedMaxCount ─────────────────
+  const qMin = num(c.qualifiedMinCount)
+  const qMax = num(c.qualifiedMaxCount)
+  if (qMin !== null && qMax !== null && qMin > qMax) {
+    issues.push({
+      id: 'C15', level: 'contradiction', fields: ['qualifiedMinCount', 'qualifiedMaxCount'],
+      message: `qualifiedMinCount (${qMin}) is greater than qualifiedMaxCount (${qMax})`,
+      why: 'The shape requires more conforming values than it allows, so no data can ever satisfy the qualified cardinality.',
+    })
+  }
+
   return issues
 }

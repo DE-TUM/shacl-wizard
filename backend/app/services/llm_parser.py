@@ -13,6 +13,27 @@ from app.models import (
 )
 
 
+# Value-level fields allowed inside a one-level nested sub-shape (Phase 5).
+_SUBSHAPE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "datatype": {"type": "string"},
+        "nodeKind": {"type": "string"},
+        "class": {"type": "string"},
+        "node": {"type": "string"},
+        "pattern": {"type": "string"},
+        "minInclusive": {"type": "string"},
+        "maxInclusive": {"type": "string"},
+        "minExclusive": {"type": "string"},
+        "maxExclusive": {"type": "string"},
+        "minLength": {"type": "string"},
+        "maxLength": {"type": "string"},
+        "in": {"type": "string"},
+        "hasValue": {"type": "string"},
+        "languageIn": {"type": "string"},
+    },
+}
+
 LLM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -46,6 +67,13 @@ LLM_SCHEMA: dict[str, Any] = {
                             "disjoint": {"type": "string"},
                             "lessThan": {"type": "string"},
                             "lessThanOrEquals": {"type": "string"},
+                            "and": {"type": "array", "items": _SUBSHAPE_SCHEMA},
+                            "or": {"type": "array", "items": _SUBSHAPE_SCHEMA},
+                            "xone": {"type": "array", "items": _SUBSHAPE_SCHEMA},
+                            "not": _SUBSHAPE_SCHEMA,
+                            "qualifiedValueShape": _SUBSHAPE_SCHEMA,
+                            "qualifiedMinCount": {"type": "string"},
+                            "qualifiedMaxCount": {"type": "string"},
                             "message": {"type": "string"},
                         },
                     },
@@ -79,6 +107,15 @@ The property-pair fields (equals, disjoint, lessThan, lessThanOrEquals) each
 take ANOTHER property's path from the same shape as their value, e.g. "startDate
 must be before endDate" -> on startDate set lessThan to "endDate". Only use them
 when the user compares one property to another property.
+
+The logical fields (and, or, xone, not, qualifiedValueShape) hold nested
+value-constraint objects (one level deep only — never nest a logical field
+inside another). Use "or" for "either X or Y" (e.g. value is a string or an
+integer -> or: [{"datatype":"xsd:string"},{"datatype":"xsd:integer"}]), "not"
+for a single negated condition, "xone" for exactly-one-of, "and" for all-of,
+and qualifiedValueShape (+ qualifiedMinCount / qualifiedMaxCount) for "at least
+N values that are ...". Only use these when the user clearly expresses such a
+compound condition; otherwise prefer the flat fields. Do NOT guess.
 
 "message" is NOT a validating constraint — it is an optional custom
 sh:message string shown in the validation report when this property is

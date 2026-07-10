@@ -7,7 +7,7 @@
 // section per SHACL constraint category. Only one section is open at a time.
 
 import { useState, useEffect } from 'react'
-import type { WizardState, PropertyConstraints } from '@/types'
+import type { WizardState, PropertyConstraints, SubShape } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
 import { detectConstraintIssues } from '@/utils/constraintWarnings'
 import type { IssueLevel } from '@/utils/constraintWarnings'
@@ -28,8 +28,18 @@ const CATEGORY_KEYS: Record<string, (keyof PropertyConstraints)[]> = {
   valueRange:  ['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'],
   stringBased: ['pattern', 'minLength', 'maxLength', 'languageIn', 'uniqueLang'],
   propertyPair: ['equals', 'disjoint', 'lessThan', 'lessThanOrEquals'],
+  logical:     ['and', 'or', 'xone', 'not', 'qualifiedValueShape'],
   shapeBased:  ['node'],
   other:       ['in', 'hasValue'],
+}
+
+// A constraint value counts as "set" for the badge. Arrays/objects (logical
+// sub-shapes) only count when non-empty.
+function isSet(v: unknown): boolean {
+  if (v === undefined || v === null || v === '') return false
+  if (Array.isArray(v)) return v.length > 0
+  if (typeof v === 'object') return Object.keys(v).length > 0
+  return true
 }
 
 export function Step4Constraints({ state, update }: Props) {
@@ -59,10 +69,7 @@ export function Step4Constraints({ state, update }: Props) {
     setOpenSection(prev => (prev === id ? null : id))
 
   const countFor = (id: string) =>
-    CATEGORY_KEYS[id].filter(k => {
-      const v = draft[k]
-      return v !== undefined && v !== null && v !== ''
-    }).length
+    CATEGORY_KEYS[id].filter(k => isSet(draft[k])).length
 
   // Cross-field validation (Phase 0.5). Warns but never blocks — SHACL permits
   // writing an unsatisfiable shape. ownPath enables the property-pair self-
@@ -73,6 +80,47 @@ export function Step4Constraints({ state, update }: Props) {
   const otherProps = state.properties
     .filter(p => p.id !== activeId)
     .map(p => p.path)
+
+  // ── Logical constraint helpers (Phase 5) ──
+  // Only one logical mode is active per property (keeps the UI demo-ready).
+  type LogicalMode = 'none' | 'and' | 'or' | 'xone' | 'not' | 'qualified'
+  const logicalMode: LogicalMode =
+    draft.and ? 'and' : draft.or ? 'or' : draft.xone ? 'xone'
+      : draft.not ? 'not' : draft.qualifiedValueShape ? 'qualified' : 'none'
+
+  const setLogicalMode = (mode: LogicalMode) => {
+    // Clear every logical field, then seed the chosen one.
+    const cleared: Partial<PropertyConstraints> = {
+      and: undefined, or: undefined, xone: undefined, not: undefined,
+      qualifiedValueShape: undefined, qualifiedMinCount: undefined, qualifiedMaxCount: undefined,
+    }
+    if (mode === 'and' || mode === 'or' || mode === 'xone') cleared[mode] = [{}]
+    else if (mode === 'not') cleared.not = {}
+    else if (mode === 'qualified') cleared.qualifiedValueShape = {}
+    patchDraft(cleared)
+  }
+
+  const listKey = (logicalMode === 'and' || logicalMode === 'or' || logicalMode === 'xone')
+    ? logicalMode : null
+
+  const updateGroup = (index: number, patch: Partial<SubShape>) => {
+    if (!listKey) return
+    const groups = [...(draft[listKey] ?? [])]
+    groups[index] = { ...groups[index], ...patch }
+    patchDraft({ [listKey]: groups })
+  }
+  const addGroup = () => {
+    if (!listKey) return
+    patchDraft({ [listKey]: [...(draft[listKey] ?? []), {}] })
+  }
+  const removeGroup = (index: number) => {
+    if (!listKey) return
+    const groups = (draft[listKey] ?? []).filter((_, i) => i !== index)
+    patchDraft({ [listKey]: groups.length ? groups : undefined })
+    if (!groups.length) setLogicalMode('none')
+  }
+  const updateSingle = (key: 'not' | 'qualifiedValueShape', patch: Partial<SubShape>) =>
+    patchDraft({ [key]: { ...(draft[key] ?? {}), ...patch } })
 
   // Worst issue level touching a given category, for the section header marker.
   const sectionIssueLevel = (id: string): IssueLevel | null => {
@@ -518,6 +566,101 @@ export function Step4Constraints({ state, update }: Props) {
               )}
             </AccordionSection>
 
+            {/* ── Logical ── */}
+            <AccordionSection
+              title="Logical"
+              count={countFor('logical')}
+              issueLevel={sectionIssueLevel('logical')}
+              isOpen={openSection === 'logical'}
+              onToggle={() => toggleSection('logical')}
+            >
+              <div className="space-y-3">
+                <ConstraintSection
+                  label="Combine conditions on the value"
+                  info="Logical constraints let a value be checked against one or more nested conditions: all of them (sh:and), any of them (sh:or), exactly one (sh:xone), none (sh:not), or a minimum number of values matching a condition (sh:qualifiedValueShape)."
+                >
+                  <div className="flex flex-wrap gap-1.5">
+                    {([
+                      ['none', 'None'],
+                      ['and', 'All of (AND)'],
+                      ['or', 'Any of (OR)'],
+                      ['xone', 'Exactly one (XONE)'],
+                      ['not', 'Not'],
+                      ['qualified', 'Qualified count'],
+                    ] as [LogicalMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        onClick={() => setLogicalMode(mode)}
+                        className={`text-[11px] px-3 py-1 rounded-full border transition-colors
+                          ${logicalMode === mode ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        `}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </ConstraintSection>
+
+                {/* AND / OR / XONE — a list of condition groups */}
+                {listKey && (
+                  <div className="space-y-2">
+                    {(draft[listKey] ?? []).map((group, i) => (
+                      <SubShapeEditor
+                        key={i}
+                        title={`Condition ${i + 1}`}
+                        value={group}
+                        onChange={patch => updateGroup(i, patch)}
+                        onRemove={() => removeGroup(i)}
+                        pfx={pfx}
+                      />
+                    ))}
+                    <button
+                      onClick={addGroup}
+                      className="w-full h-8 text-xs rounded-md border border-dashed border-zinc-300 text-zinc-600 hover:bg-zinc-50 transition-colors"
+                    >
+                      + Add condition
+                    </button>
+                  </div>
+                )}
+
+                {/* NOT — a single negated condition */}
+                {logicalMode === 'not' && (
+                  <SubShapeEditor
+                    title="Value must NOT match"
+                    value={draft.not ?? {}}
+                    onChange={patch => updateSingle('not', patch)}
+                    pfx={pfx}
+                  />
+                )}
+
+                {/* Qualified value shape + counts */}
+                {logicalMode === 'qualified' && (
+                  <div className="space-y-2">
+                    <SubShapeEditor
+                      title="Values matching this condition"
+                      value={draft.qualifiedValueShape ?? {}}
+                      onChange={patch => updateSingle('qualifiedValueShape', patch)}
+                      pfx={pfx}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <NumberInput
+                        label="Qualified min count"
+                        value={draft.qualifiedMinCount}
+                        onChange={v => patchDraft({ qualifiedMinCount: v })}
+                        info="sh:qualifiedMinCount — the fewest values that must match the condition above."
+                      />
+                      <NumberInput
+                        label="Qualified max count"
+                        value={draft.qualifiedMaxCount}
+                        onChange={v => patchDraft({ qualifiedMaxCount: v })}
+                        info="sh:qualifiedMaxCount — the most values that may match the condition above."
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AccordionSection>
+
             {/* ── Shape-based ── */}
             <AccordionSection
               title="Shape-based"
@@ -648,10 +791,12 @@ export function Step4Constraints({ state, update }: Props) {
             </div>
           )}
 
-          {/* Active constraint badges (excludes the sh:message annotation) */}
-          {Object.keys(draft).some(k => k !== 'message') && (
+          {/* Active constraint badges — scalar constraints only. The sh:message
+              annotation and the nested logical sub-shapes render in their own
+              sections, not as badges. */}
+          {Object.entries(draft).some(([k, v]) => k !== 'message' && typeof v === 'string' && v) && (
             <div className="flex flex-wrap gap-1.5">
-              {Object.entries(draft).filter(([k]) => k !== 'message').map(([k, v]) =>
+              {Object.entries(draft).filter(([k, v]) => k !== 'message' && typeof v === 'string').map(([k, v]) =>
                 v ? (
                   <span
                     key={k}
@@ -831,6 +976,104 @@ function ConstraintSection({
         )}
       </p>
       {children}
+    </div>
+  )
+}
+
+// Compact editor for a one-level nested sub-shape used inside a logical /
+// qualified constraint. Offers the most common value-level controls.
+function SubShapeEditor({ title, value, onChange, onRemove, pfx }: {
+  title:    string
+  value:    SubShape
+  onChange: (patch: Partial<SubShape>) => void
+  onRemove?: () => void
+  pfx:      string
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">{title}</span>
+        {onRemove && (
+          <button onClick={onRemove} className="text-zinc-400 hover:text-red-600 text-xs" title="Remove condition">
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* datatype */}
+      <div className="flex flex-wrap gap-1">
+        {DATATYPE_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onChange({ datatype: value.datatype === opt.value ? undefined : opt.value })}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
+              ${value.datatype === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+            `}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* nodeKind */}
+      <div className="flex flex-wrap gap-1">
+        {NODEKIND_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onChange({ nodeKind: value.nodeKind === opt.value ? undefined : opt.value })}
+            className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors
+              ${value.nodeKind === opt.value ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+            `}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="text"
+          value={value.class ?? ''}
+          onChange={e => onChange({ class: e.target.value || undefined })}
+          placeholder={`class, e.g. ${pfx}:Person`}
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+        <input
+          type="text"
+          value={value.pattern ?? ''}
+          onChange={e => onChange({ pattern: e.target.value || undefined })}
+          placeholder="pattern (regex)"
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+        <input
+          type="number"
+          value={value.minInclusive ?? ''}
+          onChange={e => onChange({ minInclusive: e.target.value || undefined })}
+          placeholder="min value >="
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+        <input
+          type="number"
+          value={value.maxInclusive ?? ''}
+          onChange={e => onChange({ maxInclusive: e.target.value || undefined })}
+          placeholder="max value <="
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+        <input
+          type="text"
+          value={value.in ?? ''}
+          onChange={e => onChange({ in: e.target.value || undefined })}
+          placeholder="in: a, b, c"
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+        <input
+          type="text"
+          value={value.hasValue ?? ''}
+          onChange={e => onChange({ hasValue: e.target.value || undefined })}
+          placeholder="hasValue"
+          className="h-7 px-2 rounded-md border border-zinc-200 text-xs mono focus:outline-none focus:border-zinc-400"
+        />
+      </div>
     </div>
   )
 }

@@ -177,6 +177,64 @@ def _add_constraints(
     if c.message:
         graph.add((subject, SH.message, Literal(c.message)))
 
+    # Logical / qualified constraints (Phase 5). Each sub-shape is a fresh blank
+    # node carrying value-level constraints (one level deep).
+    for predicate, groups in ((SH["and"], c.and_), (SH["or"], c.or_), (SH.xone, c.xone)):
+        if groups:
+            nodes: list[BNode] = []
+            for sub in groups:
+                b = BNode()
+                _emit_subshape_body(graph, b, sub, base_uri, prefix, detected_prefixes)
+                nodes.append(b)
+            _add_rdf_list(graph, subject, predicate, nodes)
+    if c.not_:
+        b = BNode()
+        _emit_subshape_body(graph, b, c.not_, base_uri, prefix, detected_prefixes)
+        graph.add((subject, SH["not"], b))
+    if c.qualified_value_shape:
+        b = BNode()
+        _emit_subshape_body(graph, b, c.qualified_value_shape, base_uri, prefix, detected_prefixes)
+        graph.add((subject, SH.qualifiedValueShape, b))
+        _add_int(graph, subject, SH.qualifiedMinCount, c.qualified_min_count, "qualifiedMinCount")
+        _add_int(graph, subject, SH.qualifiedMaxCount, c.qualified_max_count, "qualifiedMaxCount")
+
+
+def _emit_subshape_body(
+    graph: Graph,
+    node: BNode,
+    sub: object,
+    base_uri: str,
+    prefix: str = "ex",
+    detected_prefixes: dict[str, str] | None = None,
+) -> None:
+    """Emit the value-level constraints of a one-level nested SubShape.
+
+    Kept separate from _add_constraints so the main property path (the 23
+    already-shipped constraints) is never touched by Phase 5.
+    """
+    _add_int(graph, node, SH.minLength, sub.min_length, "minLength")
+    _add_int(graph, node, SH.maxLength, sub.max_length, "maxLength")
+    _add_numeric(graph, node, SH.minInclusive, sub.min_inclusive, "minInclusive", sub.datatype)
+    _add_numeric(graph, node, SH.maxInclusive, sub.max_inclusive, "maxInclusive", sub.datatype)
+    _add_numeric(graph, node, SH.minExclusive, sub.min_exclusive, "minExclusive", sub.datatype)
+    _add_numeric(graph, node, SH.maxExclusive, sub.max_exclusive, "maxExclusive", sub.datatype)
+    if sub.datatype:
+        graph.add((node, SH.datatype, _curie_or_uri(sub.datatype, base_uri, prefix, detected_prefixes=detected_prefixes)))
+    if sub.node_kind:
+        graph.add((node, SH.nodeKind, _resolve_node_kind(sub.node_kind)))
+    if sub.pattern:
+        graph.add((node, SH.pattern, Literal(_anchor_pattern(sub.pattern))))
+    if sub.class_:
+        graph.add((node, SH["class"], _resource(sub.class_, base_uri, prefix, detected_prefixes)))
+    if sub.node_:
+        graph.add((node, SH.node, _resource(sub.node_, base_uri, prefix, detected_prefixes)))
+    if sub.in_:
+        _add_rdf_list(graph, node, SH["in"], [Literal(item) for item in _split_in_values(sub.in_)])
+    if sub.has_value:
+        graph.add((node, SH.hasValue, Literal(sub.has_value.strip())))
+    if sub.language_in:
+        _add_rdf_list(graph, node, SH.languageIn, [Literal(tag) for tag in _split_csv(sub.language_in)])
+
 
 def _add_int(graph: Graph, subject: BNode, predicate: URIRef, value: str | None, label: str) -> None:
     if value is None:

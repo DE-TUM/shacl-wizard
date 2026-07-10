@@ -26,6 +26,34 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
+class SubShape(CamelModel):
+    """A one-level nested shape used inside a logical/qualified constraint.
+
+    Reuses the value-level constraint vocabulary only — no path, no cardinality,
+    and no further logical nesting — which keeps the model bounded and the UI
+    demo-ready (Phase 5, approved design).
+    """
+    datatype: str | None = None
+    node_kind: str | None = Field(default=None, alias="nodeKind")
+    class_: str | None = Field(default=None, alias="class")
+    node_: str | None = Field(default=None, alias="node")
+    pattern: str | None = None
+    min_inclusive: str | None = Field(default=None, alias="minInclusive")
+    max_inclusive: str | None = Field(default=None, alias="maxInclusive")
+    min_exclusive: str | None = Field(default=None, alias="minExclusive")
+    max_exclusive: str | None = Field(default=None, alias="maxExclusive")
+    min_length: str | None = Field(default=None, alias="minLength")
+    max_length: str | None = Field(default=None, alias="maxLength")
+    in_: str | None = Field(default=None, alias="in")
+    has_value: str | None = Field(default=None, alias="hasValue")
+    language_in: str | None = Field(default=None, alias="languageIn")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def normalize_empty_values(cls, value: object) -> object:
+        return empty_string_to_none(value)
+
+
 class PropertyConstraints(CamelModel):
     min_count: str | None = Field(default=None, alias="minCount")
     max_count: str | None = Field(default=None, alias="maxCount")
@@ -50,6 +78,14 @@ class PropertyConstraints(CamelModel):
     disjoint: str | None = None
     less_than: str | None = Field(default=None, alias="lessThan")
     less_than_or_equals: str | None = Field(default=None, alias="lessThanOrEquals")
+    # Logical / qualified constraints (Phase 5). Each sub-shape is one level deep.
+    and_: list[SubShape] | None = Field(default=None, alias="and")
+    or_: list[SubShape] | None = Field(default=None, alias="or")
+    xone: list[SubShape] | None = None
+    not_: SubShape | None = Field(default=None, alias="not")
+    qualified_value_shape: SubShape | None = Field(default=None, alias="qualifiedValueShape")
+    qualified_min_count: str | None = Field(default=None, alias="qualifiedMinCount")
+    qualified_max_count: str | None = Field(default=None, alias="qualifiedMaxCount")
     # sh:message — a human-readable annotation, NOT one of the 28 SHACL Core
     # constraint components. Customises the validation report text for this
     # property shape; never counted toward the coverage goal.

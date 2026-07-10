@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re as _re
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,25 @@ _NON_STRING_DATATYPES: frozenset = frozenset([
     XSD.gYear, XSD.gYearMonth, XSD.gMonthDay, XSD.gDay, XSD.gMonth,
     XSD.anyURI,
 ])
+
+# Numeric XSD datatypes, used to infer sh:minInclusive / sh:maxInclusive from
+# the observed value range. Excludes boolean and date/time (handled elsewhere).
+_NUMERIC_DATATYPES: frozenset = frozenset([
+    XSD.integer, XSD.decimal, XSD.float, XSD.double,
+    XSD.int, XSD.long, XSD.short, XSD.byte,
+    XSD.nonNegativeInteger, XSD.positiveInteger,
+    XSD.negativeInteger, XSD.nonPositiveInteger,
+    XSD.unsignedInt, XSD.unsignedLong, XSD.unsignedShort, XSD.unsignedByte,
+])
+
+
+def _fmt_number(value: Decimal, as_integer: bool) -> str:
+    if as_integer:
+        return str(int(value))
+    # Trim a trailing ".0"-style fraction but keep genuine decimals intact.
+    normalized = value.normalize()
+    text = format(normalized, "f")
+    return text
 
 
 _WELL_KNOWN_EXTENSIONS = ('.owl', '.rdf', '.ttl', '.n3', '.xml', '.jsonld', '.nt')
@@ -743,6 +763,63 @@ def infer_constraints(
                     all_unique = len(distinct) == len(subject_values)
                     if len(distinct) <= 6 and (not all_unique or not _looks_like_unique_identifiers(distinct)):
                         constraints["in"] = ",".join(distinct)
+
+            # ── Additive suggestions for the newer constraint types ──────────
+            # These ONLY add new keys; the five above (datatype, nodeKind,
+            # minCount, maxCount, in) are never altered, so existing evaluation
+            # metrics that read only those keys stay valid.
+
+            # sh:class — every value is an IRI sharing a common non-builtin
+            # rdf:type. Suggests the expected class of the linked resource.
+            if all_iris and all_values:
+                type_sets = [
+                    {t for t in g.objects(o, RDF.type)
+                     if isinstance(t, URIRef) and not _is_builtin_uri(t)}
+                    for o in all_values
+                ]
+                if all(type_sets):  # every object node is typed
+                    common = set.intersection(*type_sets)
+                    if common:
+                        constraints["class"] = _to_curie(sorted(common, key=str)[0])
+
+            # sh:minInclusive / sh:maxInclusive — observed numeric range when the
+            # property's values are entirely numeric literals. (A suggestion from
+            # the sample; users should widen it to the true intended bounds.)
+            if all_literals and all_values:
+                numerics: list[Decimal] = []
+                all_numeric = True
+                for o in all_values:
+                    if isinstance(o, Literal) and o.datatype in _NUMERIC_DATATYPES:
+                        try:
+                            numerics.append(Decimal(str(o)))
+                        except (InvalidOperation, ValueError):
+                            all_numeric = False
+                            break
+                    else:
+                        all_numeric = False
+                        break
+                if all_numeric and numerics:
+                    as_int = constraints.get("datatype") == "xsd:integer"
+                    constraints["minInclusive"] = _fmt_number(min(numerics), as_int)
+                    constraints["maxInclusive"] = _fmt_number(max(numerics), as_int)
+
+            # sh:languageIn / sh:uniqueLang — every literal value carries a
+            # language tag.
+            if all_literals and all_values:
+                tagged = [o for o in all_values if isinstance(o, Literal) and o.language]
+                if tagged and len(tagged) == len(all_values):
+                    langs = list(dict.fromkeys(o.language for o in tagged))
+                    constraints["languageIn"] = ",".join(langs)
+                    # uniqueLang is only meaningful (and non-redundant) when a
+                    # subject may hold several values and none repeats a language.
+                    multi_valued = any(len(vals) > 1 for vals in subject_values.values())
+                    no_repeat = all(
+                        len([v.language for v in vals if isinstance(v, Literal) and v.language])
+                        == len({v.language for v in vals if isinstance(v, Literal) and v.language})
+                        for vals in subject_values.values()
+                    )
+                    if multi_valued and no_repeat:
+                        constraints["uniqueLang"] = "true"
 
         if constraints:
             result[prop_local] = constraints

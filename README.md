@@ -8,14 +8,15 @@ Built as part of the Bachelor Practical Course in Data Engineering at TU Munich 
 
 ## Features
 
-- **Step-by-step wizard** — no RDF or SHACL knowledge required
+- **Step-by-step wizard** — no RDF or SHACL knowledge required, with contextual tooltips explaining each choice
 - **Manual mode** — build shapes from scratch with guided natural language questions
 - **Upload-assisted mode** — upload an existing RDF data graph and get classes, properties, and constraints automatically inferred and pre-filled
 - **AI-assisted NL parsing** — describe your data in plain English and get properties and constraints suggested automatically (Groq / Gemini / heuristic fallback)
-- **Multi-NodeShape support** — define multiple shapes in one session and export them as a single shapes graph
+- **Multi-NodeShape support with referenced shapes** — define multiple shapes in one session, link a property to another shape (`sh:node`), and jump straight into defining that referenced shape
+- **Custom namespace prefixes** — reuse prefixes detected from an uploaded file, pick from common vocabularies (FOAF, schema.org, Dublin Core, OWL), or define your own
 - **Built-in PySHACL validation** — drop a data graph on Step 5 to validate it against your shapes instantly
 - **Four output formats** — Turtle (.ttl), JSON-LD, RDF/XML, TriG
-- **Constraint inference from uploaded data** — Python statistical analysis + LLM verification layer
+- **Constraint inference from uploaded data** — Python statistical analysis + LLM verification layer, with an optional Apache Jena backend for large graphs
 
 ---
 
@@ -43,6 +44,7 @@ shacl-wizard/
 │   │   └── services/
 │   │       ├── llm_parser.py          # Natural language → SHACL property shapes
 │   │       ├── rdf_parser.py          # RDF upload parsing + constraint inference
+│   │       ├── jena_parser.py         # Optional Apache Jena TurtleParser subprocess wrapper
 │   │       ├── constraint_verifier.py # LLM verification layer for inferred constraints
 │   │       ├── shapes.py              # SHACL graph generation with RDFLib
 │   │       └── validator.py           # PySHACL validation runner
@@ -52,7 +54,7 @@ shacl-wizard/
     ├── src/
     │   ├── App.tsx                    # Root component, wizard state, step routing
     │   ├── api/backend.ts             # All fetch calls to the backend API
-    │   ├── components/wizard/         # Step1–Step5, ModeSelect, UploadScreen
+    │   ├── components/wizard/         # Step1–Step5, ModeSelect, UploadScreen, InfoTip, TargetCard
     │   ├── types/index.ts             # Shared TypeScript types and constants
     │   └── utils/outputBuilder.ts     # Client-side fallback shape builder
     ├── package.json
@@ -86,64 +88,43 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Apache Jena / Fuseki (optional)
+### Apache Jena (optional, for large RDF uploads)
 
-The backend can use Apache Jena Fuseki for RDF upload parsing and large-graph inference. This is optional; if Jena is not configured, the app falls back to `rdflib` when `RDF_PARSER_BACKEND=auto`.
+For large file uploads, the backend can shell out to a small Apache Jena `TurtleParser` Java program instead of parsing with `rdflib` in-process. This is optional; if Jena is not configured, the app falls back to `rdflib` when `RDF_PARSER_BACKEND=auto`.
 
-#### Installation
-
-1. Download Apache Jena Fuseki 6.x from https://jena.apache.org/download/index.cgi
-2. Extract the archive.
-3. Make the `fuseki-server` script executable if needed:
-
-```bash
-chmod +x /path/to/apache-jena-fuseki-6.1.0/fuseki-server
-```
-
-#### Start a local Fuseki dataset
-
-```bash
-cd /path/to/apache-jena-fuseki-6.1.0
-./fuseki-server --mem /shacl-wizard
-```
-
-By default Fuseki listens on `http://127.0.0.1:3030`.
+This does **not** use Fuseki or SPARQL — it's a one-shot `java -cp ... TurtleParser <file>` subprocess call that streams Turtle to N-Triples, which is then loaded into RDFLib.
 
 #### `.env` configuration
 
-The backend reads Jena settings from `backend/.env`.
-
-Option A: use base URL + dataset
-
 ```env
 RDF_PARSER_BACKEND=auto
-JENA_BASE_URL=http://127.0.0.1:3030
-JENA_DATASET=shacl-wizard
-```
-
-Option B: set explicit endpoints
-
-```env
-RDF_PARSER_BACKEND=auto
-JENA_SPARQL_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/sparql
-JENA_GRAPH_STORE_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/data
-```
-
-Option C: let the backend start Fuseki automatically
-
-```env
-RDF_PARSER_BACKEND=auto
-JENA_FUSEKI_COMMAND=/Users/<user>/Downloads/apache-jena-fuseki-6.1.0/fuseki-server --mem /shacl-wizard
-JENA_DATASET=shacl-wizard
-JENA_STARTUP_TIMEOUT_SECONDS=10
-JENA_REQUEST_TIMEOUT_SECONDS=30
+JENA_JAVA_BIN=/path/to/java
+JENA_CLASS_DIR=/path/to/compiled/jena/classes   # must contain TurtleParser.class and a lib/ dir with Jena's jars
+JENA_MIN_FILE_SIZE_MB=200        # skip Jena below this size — JVM cold-start outweighs the speedup
+JENA_REQUEST_TIMEOUT_SECONDS=600
 ```
 
 `RDF_PARSER_BACKEND` values:
 
-- `auto` — try Jena when configured, otherwise fall back to `rdflib`
+- `auto` — try Jena when `JENA_JAVA_BIN` and `JENA_CLASS_DIR` are both set, otherwise fall back to `rdflib`
 - `rdflib` — always use in-process RDFLib
-- `jena` — require Jena configuration and fail if Jena is unavailable
+- `jena` — require Jena configuration and fail instead of falling back
+
+#### Large-graph sampling
+
+Once a graph is loaded, constraint inference can sample instead of scanning every triple, controlled by:
+
+| Variable | Default | Description |
+|---|---|---|
+| `RDF_SAMPLE_TIER1_THRESHOLD` | `100000` | Below this many triples, no sampling |
+| `RDF_SAMPLE_TIER2_THRESHOLD` | `1000000` | Below this, sample at `RDF_SAMPLE_TIER1_RATE` |
+| `RDF_SAMPLE_TIER1_RATE` | `0.5` | Sampling rate for the tier1–tier2 range |
+| `RDF_SAMPLE_TIER2_RATE` | `0.2` | Sampling rate at/above tier2 |
+| `RDF_SAMPLE_MAX` | `500000` | Hard cap on sampled triples |
+
+`rdf:type` triples are always kept in full so every class stays represented; the rest are reservoir-sampled.
+
+> **Note:** `backend/.env.example` currently still documents the older Fuseki-based setup (`JENA_BASE_URL`, `JENA_SPARQL_ENDPOINT`, `JENA_FUSEKI_COMMAND`, etc.), which `config.py` no longer reads. It should be updated separately to match the variables above.
 
 ### Frontend
 
@@ -183,6 +164,9 @@ All variables are set in `backend/.env` (copy from `backend/.env.example`).
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
 | `BASE_URI` | `http://example.org/` | Base namespace for generated shapes |
 | `BACKEND_CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins (comma-separated) |
+| `RDF_PARSER_BACKEND` | `auto` | `auto`, `rdflib`, or `jena` |
+| `RDF_INFERENCE_LIMIT_TRIPLES` | `10000` | Graphs above this size skip minCount/maxCount/`sh:in` inference |
+| `JENA_JAVA_BIN` / `JENA_CLASS_DIR` | — | Enable the optional Jena `TurtleParser` path (see below) |
 
 **LLM provider priority:** Groq → Gemini → heuristic fallback. The application works fully without any API key using the built-in heuristic parser.
 

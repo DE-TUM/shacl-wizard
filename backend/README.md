@@ -63,44 +63,29 @@ With `LLM_PROVIDER=auto`, Groq is tried first. If Groq fails or has no key, Gemi
 
 ---
 
-## Apache Jena / Fuseki RDF Parser
+## Apache Jena RDF Parser
 
-Large RDF uploads can be parsed through Apache Jena Fuseki instead of RDFLib. The Python backend uploads the graph to a temporary named graph through Fuseki's Graph Store endpoint, queries hints and inferred constraints through SPARQL, then deletes the temporary graph.
+Large RDF uploads can be parsed by shelling out to a small Apache Jena `TurtleParser` Java program instead of RDFLib. This is a one-shot subprocess call (`java -cp <classpath> TurtleParser <file>`) that streams Turtle to N-Triples on disk; there is no Fuseki server or SPARQL endpoint involved.
 
 RDFLib remains the fallback unless Jena is required explicitly:
 
 ```bash
-# auto   = use Jena when configured, otherwise RDFLib
+# auto   = use Jena when JENA_JAVA_BIN and JENA_CLASS_DIR are set, otherwise RDFLib
 # rdflib = always use RDFLib
 # jena   = require Jena; fail instead of falling back
 RDF_PARSER_BACKEND=auto
+
+JENA_JAVA_BIN=/path/to/java
+JENA_CLASS_DIR=/path/to/compiled/jena/classes   # must contain TurtleParser.class and a lib/ dir with Jena's jars
+JENA_MIN_FILE_SIZE_MB=200        # below this file size, RDFLib is used even if Jena is configured (JVM cold-start isn't worth it)
+JENA_REQUEST_TIMEOUT_SECONDS=600
 ```
 
-Use an already running Fuseki dataset:
+For very large graphs, the statistical inference pass samples triples instead of scanning all of them, tiered by `RDF_SAMPLE_TIER1_THRESHOLD` / `RDF_SAMPLE_TIER2_THRESHOLD` / `RDF_SAMPLE_TIER1_RATE` / `RDF_SAMPLE_TIER2_RATE` / `RDF_SAMPLE_MAX`. `rdf:type` triples are always kept in full so class coverage isn't lost.
 
-```bash
-fuseki-server --mem /shacl-wizard
+The Jena path intentionally skips the optional LLM verification pass because that pass expects an in-process RDFLib graph sample; RDFLib mode keeps the LLM verification behavior.
 
-JENA_BASE_URL=http://127.0.0.1:3030
-JENA_DATASET=shacl-wizard
-```
-
-Or set the endpoints directly:
-
-```bash
-JENA_SPARQL_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/sparql
-JENA_GRAPH_STORE_ENDPOINT=http://127.0.0.1:3030/shacl-wizard/data
-```
-
-The backend can also start Fuseki itself when `JENA_FUSEKI_COMMAND` is configured:
-
-```bash
-JENA_FUSEKI_COMMAND=fuseki-server --mem /shacl-wizard
-JENA_BASE_URL=http://127.0.0.1:3030
-JENA_DATASET=shacl-wizard
-```
-
-The Jena path intentionally skips the optional LLM verification pass because that pass expects an in-process RDFLib graph sample. Python statistical inference still runs through SPARQL, and RDFLib mode keeps the previous LLM verification behavior.
+> **Note:** `backend/.env.example` still documents the older Fuseki-based setup (`JENA_BASE_URL`, `JENA_SPARQL_ENDPOINT`, `JENA_FUSEKI_COMMAND`, etc.), which `config.py` no longer reads — it needs to be refreshed to match the variables above.
 
 ---
 
@@ -114,7 +99,7 @@ app/
 └── services/
     ├── llm_parser.py          # NL description → property shapes via LLM or heuristic
     ├── rdf_parser.py          # RDF graph parsing + two-layer constraint inference
-    ├── jena_parser.py         # Optional Apache Jena/Fuseki parser over SPARQL
+    ├── jena_parser.py         # Optional Apache Jena TurtleParser subprocess wrapper
     ├── constraint_verifier.py # LLM verification pass over Python-inferred constraints
     ├── shapes.py              # SHACL graph construction with RDFLib + serialization
     └── validator.py           # PySHACL runner, violation extraction and message cleaning
@@ -122,9 +107,9 @@ app/
 
 ### Constraint inference pipeline (`/api/parse-rdf`)
 
-1. **Parser selection** — `RDF_PARSER_BACKEND=auto` tries Apache Jena when Fuseki endpoints are configured, otherwise RDFLib runs in-process. `jena` requires Fuseki; `rdflib` disables Jena.
-2. **Python statistical pass** — RDFLib iterates the graph directly, or Jena is queried through SPARQL. The pass computes minCount/maxCount per property, detects XSD datatypes, flags sh:IRI vs sh:Literal, and identifies `sh:in` candidates for low-cardinality categorical values.
-3. **LLM verification pass** — RDFLib mode can make a second Groq/Gemini call to review inferred constraints against a sample of real triples. Jena mode skips this pass to avoid reloading large graphs into RDFLib.
+1. **Parser selection** — `RDF_PARSER_BACKEND=auto` tries the Jena `TurtleParser` subprocess when `JENA_JAVA_BIN`/`JENA_CLASS_DIR` are configured and the file is above `JENA_MIN_FILE_SIZE_MB`, otherwise RDFLib parses in-process. `jena` requires that configuration; `rdflib` disables Jena.
+2. **Python statistical pass** — runs over the resulting RDFLib graph either way (Jena's output is converted to N-Triples and loaded into RDFLib, optionally sampled per the tiers above). The pass computes minCount/maxCount per property, detects XSD datatypes, flags sh:IRI vs sh:Literal, and identifies `sh:in` candidates for low-cardinality categorical values.
+3. **LLM verification pass** — RDFLib mode (small/medium graphs) can make a second Groq/Gemini call to review inferred constraints against a sample of real triples. The Jena path skips this pass.
 4. **Large graph optimisation** — graphs with more than `RDF_INFERENCE_LIMIT_TRIPLES` triples skip minCount/maxCount/sh:in inference (`inferenceLimited: true` in the response) to keep response times acceptable.
 
 ---

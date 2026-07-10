@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
 import { suggestProperties } from '@/api/backend'
 import { InfoTip } from './InfoTip'
@@ -17,19 +17,36 @@ export function Step3Properties({ state, update }: Props) {
   const [input, setInput] = useState('')
   const [pillSuggestions, setPillSuggestions] = useState<string[]>([])
   const [loadingPills, setLoadingPills] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
-  useEffect(() => {
-    if (state.nlParsed) return
+  // Fetch AI property suggestions for the pill overlay. Extracted so the retry
+  // button can re-run it. Failures are surfaced (see suggestError) instead of
+  // being swallowed — in manual mode this call is the only suggestion source,
+  // so a silent failure looks like "the AI suggestions just don't work".
+  const loadSuggestions = useCallback(() => {
     setLoadingPills(true)
+    setSuggestError(null)
     suggestProperties(state.shapeName, state.targetValue, state.targetType || 'class', {
       prefixes: state.detectedPrefixes,
       selectedPrefix: state.selectedPrefix,
     })
       .then(result => setPillSuggestions(result.properties.map(p => p.path)))
-      .catch(() => {})
+      .catch((err: unknown) => {
+        const timedOut = err instanceof Error && err.name === 'AbortError'
+        setSuggestError(
+          timedOut
+            ? 'Suggestions timed out. Check your connection, then retry.'
+            : 'Could not load AI suggestions. Retry, or add properties manually below.'
+        )
+      })
       .finally(() => setLoadingPills(false))
+  }, [state.shapeName, state.targetValue, state.targetType, state.detectedPrefixes, state.selectedPrefix])
+
+  useEffect(() => {
+    if (state.nlParsed) return
+    loadSuggestions()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pills that haven't been added yet — reappear automatically when a property is removed
@@ -154,6 +171,20 @@ export function Step3Properties({ state, update }: Props) {
             Add
           </button>
         </div>
+
+        {/* Surface a failed suggestion fetch with a retry, instead of silently
+            showing nothing (the pill overlay is the only AI source in manual mode). */}
+        {suggestError && !loadingPills && (
+          <p className="text-[11px] text-amber-600 flex items-center gap-1.5">
+            {suggestError}
+            <button
+              onClick={loadSuggestions}
+              className="underline underline-offset-2 hover:text-amber-700 font-medium"
+            >
+              Retry
+            </button>
+          </p>
+        )}
       </div>
 
       {/* Upload-mode suggestions */}

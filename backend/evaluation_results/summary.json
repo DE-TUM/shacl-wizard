@@ -1,0 +1,44 @@
+{
+  "lubm_file": "C:\\Users\\msi\\Documents\\TUM\\BPC Data Engineering\\Examples\\By Jin\\lubm-skg-1.ttl",
+  "triple_count": 1001716,
+  "inference_limit_triples_used": 2000000,
+  "inference_was_limited": false,
+  "per_schema": {
+    "Schema 1": {
+      "shapes_evaluated": 3,
+      "ref_properties_total": 12,
+      "properties_detected_total": 13,
+      "properties_matched": 12,
+      "recall": 1.0,
+      "precision": 0.9230769230769231,
+      "nodeKind_accuracy": 1.0,
+      "cardinality_accuracy": 0.08333333333333333,
+      "datatype_accuracy": 1.0,
+      "constraint_accuracy": 0.6944444444444443
+    },
+    "Schema 2": {
+      "shapes_evaluated": 7,
+      "ref_properties_total": 24,
+      "properties_detected_total": 23,
+      "properties_matched": 23,
+      "recall": 0.9583333333333334,
+      "precision": 1.0,
+      "nodeKind_accuracy": 1.0,
+      "cardinality_accuracy": 0.08695652173913043,
+      "datatype_accuracy": 1.0,
+      "constraint_accuracy": 0.6956521739130435
+    },
+    "Schema 3": {
+      "shapes_evaluated": 14,
+      "ref_properties_total": 75,
+      "properties_detected_total": 73,
+      "properties_matched": 73,
+      "recall": 0.9733333333333334,
+      "precision": 1.0,
+      "nodeKind_accuracy": 1.0,
+      "cardinality_accuracy": 0.0410958904109589,
+      "datatype_accuracy": 1.0,
+      "constraint_accuracy": 0.6803652968036529
+    }
+  }
+}

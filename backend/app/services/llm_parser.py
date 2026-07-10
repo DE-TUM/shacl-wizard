@@ -104,18 +104,49 @@ says each language may appear at most once among the values (e.g. "at most one
 label per language"); otherwise omit it.
 
 The property-pair fields (equals, disjoint, lessThan, lessThanOrEquals) each
-take ANOTHER property's path from the same shape as their value, e.g. "startDate
-must be before endDate" -> on startDate set lessThan to "endDate". Only use them
+take ANOTHER property's path from the same shape as their value. Only use them
 when the user compares one property to another property.
+
+DIRECTION IS CRITICAL for lessThan and lessThanOrEquals — getting it backwards
+reverses the meaning. Put the constraint on the SMALLER / EARLIER property and
+point it at the LARGER / LATER property:
+- "A must be before / less than / earlier than B" -> set lessThan on property A
+  with value "B". Put it on A only; B gets nothing.
+- "A must be on or before / at most / no later than B" -> set lessThanOrEquals
+  on property A with value "B".
+Worked example: "startDate must be strictly before endDate" ->
+  startDate.constraints.lessThan = "endDate"   (endDate has NO pair constraint).
+NEVER attach the constraint to the later/larger property, and never point it
+back the other way (e.g. do NOT put lessThan="startDate" on endDate).
 
 The logical fields (and, or, xone, not, qualifiedValueShape) hold nested
 value-constraint objects (one level deep only — never nest a logical field
 inside another). Use "or" for "either X or Y" (e.g. value is a string or an
 integer -> or: [{"datatype":"xsd:string"},{"datatype":"xsd:integer"}]), "not"
-for a single negated condition, "xone" for exactly-one-of, "and" for all-of,
-and qualifiedValueShape (+ qualifiedMinCount / qualifiedMaxCount) for "at least
-N values that are ...". Only use these when the user clearly expresses such a
-compound condition; otherwise prefer the flat fields. Do NOT guess.
+for a single negated condition, "xone" for exactly-one-of, "and" for all-of.
+
+qualifiedValueShape (+ qualifiedMinCount / qualifiedMaxCount) is for "at least /
+at most N of the values that are / conform to <condition>", where only SOME of
+the values must match (the rest are unrestricted). In that case put the
+condition INSIDE qualifiedValueShape and the number in qualifiedMinCount /
+qualifiedMaxCount. Do NOT instead put a plain class/datatype together with a
+plain minCount/maxCount on the property — that wrongly forces EVERY value to
+match the condition. Worked example: "at least two teamMembers that are
+instances of ex:Manager" ->
+  teamMembers.constraints = {"qualifiedValueShape": {"class": "ex:Manager"},
+                             "qualifiedMinCount": "2"}
+with NO plain "class" and NO plain "minCount" on teamMembers. Use plain
+minCount/maxCount only for the TOTAL number of values, and use a plain
+class/datatype only when EVERY value must satisfy it.
+
+Inside any nested condition (a sub-shape of and/or/xone/not/qualifiedValueShape),
+"is an instance of / is a / are <ClassName>" means class: "<ClassName>". Use
+node inside a sub-shape ONLY when the user says the value must conform to another
+named SHAPE, never for a plain class membership. Example: "values that are
+instances of ex:Manager" -> {"class": "ex:Manager"}, not {"node": "ex:Manager"}.
+
+Only use these compound fields when the user clearly expresses such a condition;
+otherwise prefer the flat fields. Do NOT guess.
 
 "message" is NOT a validating constraint — it is an optional custom
 sh:message string shown in the validation report when this property is
@@ -294,14 +325,49 @@ def parse_with_gemini(request: ParseNLRequest, settings: Settings) -> ParseNLRes
     )
 
 
+# Fields the frontend stores as comma-separated strings but the LLM sometimes
+# emits as a JSON array. Coerce arrays back to a string so downstream (and the
+# str-typed pydantic fields) never receive a list.
+_STRING_LIST_FIELDS = ("in", "languageIn")
+
+
+def _list_to_csv(items: list) -> str:
+    return ", ".join(str(x).strip().strip("\"'") for x in items if str(x).strip())
+
+
+def _coerce_string_list_fields(obj: dict) -> None:
+    for field in _STRING_LIST_FIELDS:
+        if isinstance(obj.get(field), list):
+            obj[field] = _list_to_csv(obj[field])
+
+
+def _normalize_subshape(sub: dict) -> dict:
+    """Coerce list-valued fields inside a one-level nested sub-shape."""
+    out = dict(sub)
+    _coerce_string_list_fields(out)
+    if out.get("in"):
+        out["in"] = _normalize_in_value(out["in"])
+    return out
+
+
 def _normalize_constraints(
     raw: dict,
     allowed_shapes: set[str] | None = None,
     description: str = "",
 ) -> dict:
     result = dict(raw)
+    _coerce_string_list_fields(result)
     if result.get("in"):
         result["in"] = _normalize_in_value(result["in"])
+    # Logical sub-shapes: coerce list fields within each nested group too.
+    for list_field in ("and", "or", "xone"):
+        if isinstance(result.get(list_field), list):
+            result[list_field] = [
+                _normalize_subshape(s) for s in result[list_field] if isinstance(s, dict)
+            ]
+    for obj_field in ("not", "qualifiedValueShape"):
+        if isinstance(result.get(obj_field), dict):
+            result[obj_field] = _normalize_subshape(result[obj_field])
     if result.get("minInclusive"):
         result["minExclusive"] = None
     if result.get("maxInclusive"):
@@ -334,7 +400,9 @@ def _node_is_allowed(
     return node.lower() in folded or (bool(local) and local.lower() in folded)
 
 
-def _normalize_in_value(value: str) -> str:
+def _normalize_in_value(value: str | list) -> str:
+    if isinstance(value, list):
+        return _list_to_csv(value)
     if "," in value:
         tokens = [t.strip().strip("\"'") for t in value.split(",")]
     else:

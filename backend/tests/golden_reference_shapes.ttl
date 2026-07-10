@@ -1,0 +1,66 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ub: <http://swat.cse.lehigh.edu/onto/univ-bench.owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ub:FullProfessorShape a sh:NodeShape ;
+    sh:property [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:path ub:name ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            sh:in ( "AI" "Databases" "Semantic Web" ) ;
+            sh:path ub:researchInterest ],
+        [ a sh:PropertyShape ;
+            sh:class ub:GraduateStudent ;
+            sh:path ub:advisorOf ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:integer ;
+            sh:maxInclusive 100 ;
+            sh:minInclusive 18 ;
+            sh:path ub:age ],
+        [ a sh:PropertyShape ;
+            sh:minCount 1 ;
+            sh:node ub:DepartmentShape ;
+            sh:nodeKind sh:IRI ;
+            sh:path ub:worksFor ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            sh:path ub:emailAddress ;
+            sh:pattern "^[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}$" ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:decimal ;
+            sh:maxExclusive 5.0 ;
+            sh:minExclusive 0.0 ;
+            sh:path ub:teachingRating ] ;
+    sh:targetClass ub:FullProfessor .
+
+ub:DepartmentShape a sh:NodeShape ;
+    sh:property [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            sh:minCount 1 ;
+            sh:path ub:name ],
+        [ a sh:PropertyShape ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:node ub:UniversityShape ;
+            sh:nodeKind sh:IRI ;
+            sh:path ub:subOrganizationOf ] ;
+    sh:targetClass ub:Department .
+
+ub:UniversityShape a sh:NodeShape ;
+    sh:property [ a sh:PropertyShape ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:path ub:homepage ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            sh:maxCount 1 ;
+            sh:maxLength 120 ;
+            sh:minCount 1 ;
+            sh:minLength 2 ;
+            sh:path ub:name ] ;
+    sh:targetClass ub:University .
+

@@ -42,7 +42,15 @@ LLM_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string"},
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "The property's LOCAL NAME ONLY: no namespace prefix, no "
+                            "colon, and no full URI. Correct: \"name\", \"worksFor\", "
+                            "\"jobTitle\". Incorrect: \"ex:name\", \"schema:name\", "
+                            "\"foaf:name\", \"http://xmlns.com/foaf/0.1/name\"."
+                        ),
+                    },
                     "constraints": {
                         "type": "object",
                         "properties": {
@@ -160,19 +168,17 @@ user explicitly specifies a value type. Do NOT infer or add datatype unless the
 user names one (e.g. "must be an integer", "must be a date"). Never set
 sh:datatype on a property that has sh:nodeKind sh:IRI or sh:node.
 
-Property path naming — the input includes "availablePrefixes" (a map of
-prefix -> namespace) and "selectedPrefix":
-- If the user writes a property explicitly as a CURIE (prefix:localName, e.g.
-  "ub:name", "ub:worksFor"), preserve that exact CURIE verbatim in "path",
-  including the prefix — even if that prefix is not in availablePrefixes. The
-  user chose it deliberately; do not strip or rename it.
-- Otherwise, if a property clearly belongs to one of the availablePrefixes
-  vocabularies (e.g. a person's name under foaf, a job title under schema), use
-  that CURIE form for "path", such as foaf:name or schema:jobTitle.
-- Otherwise use a bare local name with no prefix (e.g. "salary"); the wizard
-  automatically applies the selectedPrefix to bare names.
-- Never use the ex: prefix and never invent a prefix the user did not write and
-  that is not in availablePrefixes.
+Property path naming — always return "path" as a bare LOCAL NAME only: no
+namespace prefix, no colon, and no full URI. The wizard applies the correct
+prefix afterwards, so you must never add one. Return exactly one token per path
+with no ":" character anywhere in it.
+- CORRECT:   "name", "email", "worksFor", "jobTitle", "salary"
+- INCORRECT: "ex:name" (prefix), "schema:name" (prefix), "foaf:name" (prefix),
+  "http://xmlns.com/foaf/0.1/name" (full URI), ":name" (colon)
+This holds in every case. Even when the user writes a property as a CURIE (e.g.
+"ub:worksFor") or when the property clearly belongs to a known vocabulary such
+as foaf or schema, strip the prefix and return only the local part
+("worksFor", "name"). Never emit a prefix, a colon, or a URI in "path".
 
 Shape references (node) — the input includes "existingShapes", a list of
 NodeShape names already defined in this graph:

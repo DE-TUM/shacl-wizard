@@ -1,21 +1,44 @@
 // Step 4 - Constraint configuration.
-// For each property added in Step 3, the user defines what constraints apply.
-// The panel on the left shows property pills; clicking one opens the constraint
-// editor for that property on the right.
+// The property list is full-width (same layout as every other step). Selecting a
+// property opens its constraint editor. On wide viewports (>=1120px) that editor is
+// portaled into the App-level side panel that slides in beside the wizard card;
+// below 1120px it renders inline/stacked right here - the original fallback.
 //
 // The editor groups constraints into a single-expand accordion, one collapsible
 // section per SHACL constraint category. Only one section is open at a time.
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { WizardState, PropertyConstraints, SubShape } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
 import { detectConstraintIssues } from '@/utils/constraintWarnings'
 import type { IssueLevel } from '@/utils/constraintWarnings'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { InfoTip } from './InfoTip'
 
+// Must match the App side panel's CSS transition duration (duration-200) so the
+// outgoing property's content survives exactly as long as the panel's slide-out.
+const PANEL_SLIDE_MS = 200
+
+// Renders children inline (the stacked fallback) or portaled into the App-level
+// side panel. On desktop with no slot yet it renders nothing (avoids a flash of the
+// editor inside the card before the portal target mounts).
+function MaybePortal({ target, inline, children }: {
+  target: HTMLElement | null
+  inline: boolean
+  children: React.ReactNode
+}) {
+  if (inline) return <>{children}</>
+  return target ? createPortal(children, target) : null
+}
+
 interface Props {
-  state:  WizardState
-  update: (patch: Partial<WizardState>) => void
+  state:          WizardState
+  update:         (patch: Partial<WizardState>) => void
+  // Reported upward so App can shift the card left + slide the side panel in (desktop).
+  onPanelChange?: (open: boolean) => void
+  // The App-level side-panel scroll container to portal the editor into (desktop).
+  panelSlot?:     HTMLElement | null
 }
 
 // Which draft keys belong to each accordion category. Drives the per-section
@@ -52,7 +75,7 @@ function isSet(v: unknown): boolean {
   return true
 }
 
-export function Step4Constraints({ state, update }: Props) {
+export function Step4Constraints({ state, update, onPanelChange, panelSlot }: Props) {
   const pfx = state.selectedPrefix || 'ex'
   const [activeId, setActiveId]         = useState<string | null>(null)
   const [draft,    setDraft]            = useState<PropertyConstraints>({})
@@ -62,13 +85,41 @@ export function Step4Constraints({ state, update }: Props) {
   const [highlightField, setHighlightField] = useState<string | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
 
-  const activeProperty = state.properties.find(p => p.id === activeId) ?? null
+  // >=1120px (fits a 540px card + a 486px side panel side by side): the editor lives
+  // in the App side panel; below that, the stacked inline fallback.
+  const isDesktop = useMediaQuery('(min-width: 1120px)')
 
-  // When the user picks a different property, load its existing constraints
+  // `activeId` is the selected property (list highlight + whether the panel is open).
+  // `renderId` is the property whose content is shown; on desktop it lags activeId on
+  // close so the outgoing content survives the side panel's slide-out before clearing.
+  const [renderId, setRenderId] = useState<string | null>(null)
+  // Per-property list buttons, so Escape can return focus to the selected one.
+  const propBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  const activeProperty = state.properties.find(p => p.id === renderId) ?? null
+
+  // Load the shown property's constraints into the draft when it changes.
   useEffect(() => {
-    if (activeProperty) setDraft({ ...activeProperty.constraints })
-    else setDraft({})
-  }, [activeId])
+    const shown = state.properties.find(p => p.id === renderId)
+    setDraft(shown ? { ...shown.constraints } : {})
+  }, [renderId])
+
+  // Keep renderId in sync with the selection. On desktop, when deselected, hold the
+  // content for the slide-out duration before clearing; on the stacked layout there
+  // is no slide, so clear immediately (original behaviour).
+  useEffect(() => {
+    if (activeId) { setRenderId(activeId); return }
+    if (!isDesktop) { setRenderId(null); return }
+    const t = window.setTimeout(() => setRenderId(null), PANEL_SLIDE_MS + 40)
+    return () => window.clearTimeout(t)
+  }, [activeId, isDesktop])
+
+  // Tell App when the side panel should be open (desktop + a selection) so it can
+  // translate the card left and slide the panel in. Reset on unmount / step change.
+  useEffect(() => {
+    onPanelChange?.(isDesktop && activeId !== null)
+  }, [isDesktop, activeId, onPanelChange])
+  useEffect(() => () => onPanelChange?.(false), [onPanelChange])
 
   // "Jump to error" from Step 5: select the property, open the section holding
   // the failed field, and flag the field for highlighting. Cleared once consumed
@@ -86,11 +137,14 @@ export function Step4Constraints({ state, update }: Props) {
   }, [state.jumpTarget]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once the target section is open and its editor rendered, scroll the failed
-  // field's control into view and flash it. Falls back to scrolling the editor
-  // to the top when the field has no dedicated control (logical/qualified/etc).
+  // field's control into view (within the panel's own scroll container on desktop,
+  // not the page body) and flash it. We wait out the panel's slide-in first, so the
+  // field isn't scrolled while the panel is still off-screen mid-transition. Falls
+  // back to scrolling the editor top when the field has no control (logical/etc).
   useEffect(() => {
     if (!highlightField) return
-    const raf = requestAnimationFrame(() => {
+    const wait = isDesktop ? PANEL_SLIDE_MS + 60 : 40
+    const run = window.setTimeout(() => {
       const root = editorRef.current
       if (!root) return
       const el = root.querySelector(`[data-cfields~="${highlightField}"]`) as HTMLElement | null
@@ -100,10 +154,10 @@ export function Step4Constraints({ state, update }: Props) {
         el.classList.add('constraint-flash')
         window.setTimeout(() => el.classList.remove('constraint-flash'), 2400)
       }
-    })
-    const clear = window.setTimeout(() => setHighlightField(null), 2500)
-    return () => { cancelAnimationFrame(raf); window.clearTimeout(clear) }
-  }, [highlightField])
+      setHighlightField(null)
+    }, wait)
+    return () => window.clearTimeout(run)
+  }, [highlightField, isDesktop])
 
   const patchDraft = (patch: Partial<PropertyConstraints>) =>
     setDraft(prev => ({ ...prev, ...patch }))
@@ -125,7 +179,7 @@ export function Step4Constraints({ state, update }: Props) {
 
   // Other properties in this shape, offered as property-pair comparison targets.
   const otherProps = state.properties
-    .filter(p => p.id !== activeId)
+    .filter(p => p.id !== renderId)
     .map(p => p.path)
 
   // ── Logical constraint helpers (Phase 5) ──
@@ -178,13 +232,23 @@ export function Step4Constraints({ state, update }: Props) {
   }
 
   const saveAndClose = () => {
-    if (!activeId) return
+    if (!activeProperty) return
+    const id = activeProperty.id
     update({
       properties: state.properties.map(p =>
-        p.id === activeId ? { ...p, constraints: draft } : p
+        p.id === id ? { ...p, constraints: draft } : p
       ),
     })
     setActiveId(null)
+  }
+
+  // Escape closes the panel and returns focus to the selected property in the list.
+  const onPanelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && activeId) {
+      const id = activeId
+      setActiveId(null)
+      requestAnimationFrame(() => propBtnRefs.current[id]?.focus())
+    }
   }
 
   return (
@@ -198,11 +262,11 @@ export function Step4Constraints({ state, update }: Props) {
           </InfoTip>
         </h2>
         <p className="text-sm text-zinc-500 mt-1">
-          Select a property below and configure its constraints.
+          Select a property and configure its constraints.
         </p>
       </div>
 
-      {/* Property selector pills */}
+      {/* Property list - full width, same as every other wizard step. */}
       <div className="space-y-1.5">
         <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
           Property to edit
@@ -212,34 +276,40 @@ export function Step4Constraints({ state, update }: Props) {
           </InfoTip>
         </p>
         <div className="flex flex-wrap gap-2">
-          {state.properties.map(prop => (
-            <button
-              key={prop.id}
-              onClick={() => setActiveId(prop.id)}
-              className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
-                ${activeId === prop.id
-                  ? 'bg-zinc-900 text-white border-zinc-900'
-                  : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
-              `}
-            >
-              {prop.path}
-              {(() => {
-                // Count only validating constraints - sh:message is an annotation.
-                const count = Object.entries(prop.constraints).filter(
-                  ([k, v]) => k !== 'message' && v !== null && v !== undefined && v !== ''
-                ).length
-                return count > 0 ? (
-                  <span className="ml-1.5 opacity-60">{count}x</span>
-                ) : null
-              })()}
-            </button>
-          ))}
+          {state.properties.map(prop => {
+            // Count only validating constraints - sh:message is an annotation.
+            const count = Object.entries(prop.constraints).filter(
+              ([k, v]) => k !== 'message' && v !== null && v !== undefined && v !== ''
+            ).length
+            return (
+              <button
+                key={prop.id}
+                ref={el => { propBtnRefs.current[prop.id] = el }}
+                onClick={() => setActiveId(prop.id)}
+                className={`mono text-xs px-3 py-1.5 rounded-full border transition-colors
+                  ${activeId === prop.id
+                    ? 'bg-zinc-900 text-white border-zinc-900'
+                    : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'}
+                `}
+              >
+                {prop.path}
+                {count > 0 && <span className="ml-1.5 opacity-60">{count}x</span>}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Constraint editor */}
-      {activeProperty ? (
-        <div ref={editorRef} className="space-y-4 fade-up">
+      {/* Constraint editor. On >=1120px it is portaled into the App-level side panel
+          (a sibling of the wizard card); below 1120px it renders inline/stacked here,
+          exactly as it did before the side-panel work. */}
+      {activeProperty && (
+        <MaybePortal target={panelSlot ?? null} inline={!isDesktop}>
+        <div
+          ref={editorRef}
+          className={isDesktop ? 'space-y-4' : 'space-y-4 fade-up'}
+          onKeyDown={onPanelKeyDown}
+        >
 
           {/* Editable property name */}
           <div className="flex items-center gap-2">
@@ -251,13 +321,13 @@ export function Step4Constraints({ state, update }: Props) {
                 onChange={e => setNameValue(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
-                    if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === activeId ? { ...p, path: nameValue.trim() } : p) })
+                    if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === renderId ? { ...p, path: nameValue.trim() } : p) })
                     setEditingName(false)
                   }
-                  if (e.key === 'Escape') setEditingName(false)
+                  if (e.key === 'Escape') { e.stopPropagation(); setEditingName(false) }
                 }}
                 onBlur={() => {
-                  if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === activeId ? { ...p, path: nameValue.trim() } : p) })
+                  if (nameValue.trim()) update({ properties: state.properties.map(p => p.id === renderId ? { ...p, path: nameValue.trim() } : p) })
                   setEditingName(false)
                 }}
                 className="mono text-sm font-medium border-b border-zinc-400 outline-none bg-transparent"
@@ -895,7 +965,12 @@ export function Step4Constraints({ state, update }: Props) {
             <span className="mono ml-1 opacity-70">{activeProperty.path.includes(':') ? activeProperty.path : `${pfx}:${activeProperty.path}`}</span>
           </button>
         </div>
-      ) : (
+        </MaybePortal>
+      )}
+
+      {/* Stacked fallback empty state (<1120px). On desktop the editor lives in the
+          side panel, so nothing shows here when no property is selected. */}
+      {!activeProperty && !isDesktop && (
         <div className="text-center py-8 text-zinc-400 text-sm border border-dashed border-zinc-200 rounded-xl">
           Select a property above to define its constraints.
         </div>

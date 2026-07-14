@@ -20,6 +20,27 @@ pre   { font-family: 'DM Mono', monospace; }
 }
 .pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
 
+/* "Jump to error" highlight: briefly ring the constraint control that failed
+   validation after the user clicks "Fix this" in Step 5. The ring is drawn as an
+   absolutely-positioned ::after overlay, so it sits OVER the section (offset out
+   from the content edges) and never participates in layout - adding or removing
+   it can't shift or recenter the section's contents. The section itself carries
+   `relative` permanently so nothing is toggled on the flow element. */
+@keyframes constraintFlash {
+  0%   { border-color: rgba(244, 63, 94, 0); }
+  15%  { border-color: rgba(244, 63, 94, 0.85); }
+  100% { border-color: rgba(244, 63, 94, 0); }
+}
+.constraint-flash::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border: 2px solid rgba(244, 63, 94, 0);
+  border-radius: 0.85rem;
+  pointer-events: none;
+  animation: constraintFlash 2.3s ease-out;
+}
+
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 

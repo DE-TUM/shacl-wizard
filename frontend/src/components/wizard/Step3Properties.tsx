@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
 import { suggestProperties } from '@/api/backend'
 import { InfoTip } from './InfoTip'
@@ -44,8 +44,15 @@ export function Step3Properties({ state, update }: Props) {
       .finally(() => setLoadingPills(false))
   }, [state.shapeName, state.targetValue, state.targetType, state.detectedPrefixes, state.selectedPrefix])
 
+  // StrictMode double-invokes mount effects in dev, which would fire two
+  // suggestProperties calls; the second (last to resolve) would overwrite the
+  // first, making pills visibly change after they first render. A ref persists
+  // across StrictMode's simulated remount, so the fetch runs exactly once.
+  const didAutoLoad = useRef(false)
   useEffect(() => {
     if (state.nlParsed) return
+    if (didAutoLoad.current) return
+    didAutoLoad.current = true
     loadSuggestions()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -6,7 +6,7 @@
 // The editor groups constraints into a single-expand accordion, one collapsible
 // section per SHACL constraint category. Only one section is open at a time.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { WizardState, PropertyConstraints, SubShape } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
 import { detectConstraintIssues } from '@/utils/constraintWarnings'
@@ -33,6 +33,16 @@ const CATEGORY_KEYS: Record<string, (keyof PropertyConstraints)[]> = {
   other:       ['in', 'hasValue'],
 }
 
+// Reverse of CATEGORY_KEYS: constraint field -> accordion section id. Used by the
+// "jump to error" flow to open the section holding the field that failed validation.
+const FIELD_TO_SECTION: Record<string, string> = Object.entries(CATEGORY_KEYS).reduce(
+  (acc, [section, keys]) => {
+    for (const k of keys) acc[k as string] = section
+    return acc
+  },
+  {} as Record<string, string>,
+)
+
 // A constraint value counts as "set" for the badge. Arrays/objects (logical
 // sub-shapes) only count when non-empty.
 function isSet(v: unknown): boolean {
@@ -49,6 +59,8 @@ export function Step4Constraints({ state, update }: Props) {
   const [editingName, setEditingName]   = useState(false)
   const [nameValue,   setNameValue]     = useState('')
   const [openSection, setOpenSection]   = useState<string | null>('valueType')
+  const [highlightField, setHighlightField] = useState<string | null>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
 
   const activeProperty = state.properties.find(p => p.id === activeId) ?? null
 
@@ -57,6 +69,41 @@ export function Step4Constraints({ state, update }: Props) {
     if (activeProperty) setDraft({ ...activeProperty.constraints })
     else setDraft({})
   }, [activeId])
+
+  // "Jump to error" from Step 5: select the property, open the section holding
+  // the failed field, and flag the field for highlighting. Cleared once consumed
+  // so navigating away and back doesn't re-trigger it.
+  useEffect(() => {
+    const jt = state.jumpTarget
+    if (!jt) return
+    setActiveId(jt.propertyId)
+    if (jt.field) {
+      const section = FIELD_TO_SECTION[jt.field]
+      if (section) setOpenSection(section)
+      setHighlightField(jt.field)
+    }
+    update({ jumpTarget: null })
+  }, [state.jumpTarget]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once the target section is open and its editor rendered, scroll the failed
+  // field's control into view and flash it. Falls back to scrolling the editor
+  // to the top when the field has no dedicated control (logical/qualified/etc).
+  useEffect(() => {
+    if (!highlightField) return
+    const raf = requestAnimationFrame(() => {
+      const root = editorRef.current
+      if (!root) return
+      const el = root.querySelector(`[data-cfields~="${highlightField}"]`) as HTMLElement | null
+      const target = el ?? root
+      target.scrollIntoView({ behavior: 'smooth', block: el ? 'center' : 'start' })
+      if (el) {
+        el.classList.add('constraint-flash')
+        window.setTimeout(() => el.classList.remove('constraint-flash'), 2400)
+      }
+    })
+    const clear = window.setTimeout(() => setHighlightField(null), 2500)
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(clear) }
+  }, [highlightField])
 
   const patchDraft = (patch: Partial<PropertyConstraints>) =>
     setDraft(prev => ({ ...prev, ...patch }))
@@ -192,7 +239,7 @@ export function Step4Constraints({ state, update }: Props) {
 
       {/* Constraint editor */}
       {activeProperty ? (
-        <div className="space-y-4 fade-up">
+        <div ref={editorRef} className="space-y-4 fade-up">
 
           {/* Editable property name */}
           <div className="flex items-center gap-2">
@@ -245,6 +292,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="What type of value is expected?"
                 info="Datatype constraints are for literal values such as text, numbers, dates, and booleans."
+                fields={['datatype']}
               >
                 <div className="flex flex-wrap gap-1.5">
                   {DATATYPE_OPTIONS.map(opt => (
@@ -265,6 +313,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Should the value be a resource or a plain value?"
                 info="Node kind distinguishes named resources (IRIs), blank nodes, and plain literal values."
+                fields={['nodeKind']}
               >
                 <div className="flex flex-wrap gap-1.5">
                   {NODEKIND_OPTIONS.map(opt => (
@@ -313,6 +362,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Must the value be an instance of a class? (sh:class)"
                 info="sh:class requires each value to be a resource that has rdf:type the given class (directly or via a subclass). Use it for links to typed resources, e.g. every author must be a foaf:Person."
+                fields={['class']}
               >
                 <input
                   type="text"
@@ -335,6 +385,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="How many values must this property have?"
                 info="Cardinality controls whether the property is required and how many values are allowed for each target node."
+                fields={['minCount', 'maxCount']}
               >
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {[
@@ -385,6 +436,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Is there a numeric range? (for integers / decimals)"
                 info="Range constraints compare numeric or date-like values against lower and upper bounds."
+                fields={['minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive']}
               >
                 <div className="grid grid-cols-2 gap-2">
                   <NumberInput
@@ -429,6 +481,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Does the value need to match a specific format? (regex)"
                 info="sh:pattern checks text with a regular expression, which is useful for emails, IDs, codes, and similar formats."
+                fields={['pattern']}
               >
                 <input
                   type="text"
@@ -443,6 +496,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Is there a character length limit?"
                 info="Length constraints count the characters in a literal text value."
+                fields={['minLength', 'maxLength']}
               >
                 <div className="grid grid-cols-2 gap-2">
                   <NumberInput
@@ -464,6 +518,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Which languages are allowed? (sh:languageIn)"
                 info="sh:languageIn restricts language-tagged text to the listed language tags, e.g. only English and German labels. It applies to literals with a language tag."
+                fields={['languageIn']}
               >
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {['en', 'de', 'fr', 'es', 'it'].map(tag => {
@@ -498,6 +553,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="At most one value per language? (sh:uniqueLang)"
                 info="sh:uniqueLang true forbids two values sharing the same language tag, e.g. only one English label. It only has an effect when the property can have several values."
+                fields={['uniqueLang']}
               >
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-600">
                   <button
@@ -533,7 +589,7 @@ export function Step4Constraints({ state, update }: Props) {
                   Add another property in Step 3 to compare this one against.
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="relative space-y-4 scroll-mt-4 rounded-md" data-cfields="equals disjoint lessThan lessThanOrEquals">
                   <PropertyPairSelect
                     label="Same values as another property? (sh:equals)"
                     info="sh:equals requires this property to have exactly the same set of values as the chosen property."
@@ -578,6 +634,7 @@ export function Step4Constraints({ state, update }: Props) {
                 <ConstraintSection
                   label="Combine conditions on the value"
                   info="Logical constraints let a value be checked against one or more nested conditions: all of them (sh:and), any of them (sh:or), exactly one (sh:xone), none (sh:not), or a minimum number of values matching a condition (sh:qualifiedValueShape)."
+                  fields={['and', 'or', 'xone', 'not', 'qualifiedValueShape', 'qualifiedMinCount', 'qualifiedMaxCount']}
                 >
                   <div className="flex flex-wrap gap-1.5">
                     {([
@@ -686,6 +743,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Must the value conform to another shape? (sh:node)"
                 info="sh:node requires that the value node also satisfies the referenced NodeShape. Use this to nest shapes - e.g. every worksFor value must match UniversityShape."
+                fields={['node']}
               >
                 {state.completedShapes.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -729,6 +787,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Must the value be one of a fixed list? (sh:in)"
                 info="sh:in means the value must match one item from the allowed list, such as active, inactive, or pending."
+                fields={['in']}
               >
                 <input
                   type="text"
@@ -743,6 +802,7 @@ export function Step4Constraints({ state, update }: Props) {
               <ConstraintSection
                 label="Must the value include a specific value? (sh:hasValue)"
                 info="sh:hasValue requires the property to have this exact value among its values (in addition to anything else). Useful for a mandatory flag, e.g. status must include 'active'."
+                fields={['hasValue']}
               >
                 <input
                   type="text"
@@ -970,14 +1030,16 @@ function AccordionSection({
 function ConstraintSection({
   label,
   info,
+  fields,
   children,
 }: {
   label: string
   info?: string
+  fields?: string[]   // constraint keys this section owns; targeted by "jump to error"
   children: React.ReactNode
 }) {
   return (
-    <div>
+    <div data-cfields={fields?.join(' ')} className="relative scroll-mt-4 rounded-md">
       <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
         {label}
         {info && (

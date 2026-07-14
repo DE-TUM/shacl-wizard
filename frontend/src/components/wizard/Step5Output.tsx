@@ -23,6 +23,34 @@ const TABS = [
 
 type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid' | 'error'
 
+// Map a PySHACL sh:sourceConstraintComponent to the PropertyConstraints field it
+// validates, so a violation can point Step 4 at the exact control that failed.
+// Qualified* all resolve to the logical qualifiedValueShape editor.
+const CONSTRAINT_COMPONENT_FIELD: Record<string, string> = {
+  MinCount: 'minCount', MaxCount: 'maxCount', Datatype: 'datatype', NodeKind: 'nodeKind',
+  Pattern: 'pattern', MinInclusive: 'minInclusive', MaxInclusive: 'maxInclusive',
+  MinExclusive: 'minExclusive', MaxExclusive: 'maxExclusive', MinLength: 'minLength',
+  MaxLength: 'maxLength', In: 'in', Class: 'class', Node: 'node', LanguageIn: 'languageIn',
+  HasValue: 'hasValue', UniqueLang: 'uniqueLang', Equals: 'equals', Disjoint: 'disjoint',
+  LessThan: 'lessThan', LessThanOrEquals: 'lessThanOrEquals',
+  And: 'and', Or: 'or', Xone: 'xone', Not: 'not',
+  QualifiedValueShape: 'qualifiedValueShape', QualifiedMinCount: 'qualifiedValueShape',
+  QualifiedMaxCount: 'qualifiedValueShape',
+}
+
+function componentToField(component: string | null | undefined): string | null {
+  if (!component) return null
+  const bare = component.replace(/^sh:/, '').replace(/ConstraintComponent$/, '')
+  return CONSTRAINT_COMPONENT_FIELD[bare] ?? null
+}
+
+// Local name of a path/CURIE, lowercased - lets a violation's resultPath CURIE
+// (e.g. "ex:isbn") match a stored property whether it's bare or prefixed.
+function violationLocalName(path: string): string {
+  const i = path.lastIndexOf(':')
+  return (i >= 0 ? path.slice(i + 1) : path).toLowerCase()
+}
+
 export function Step5Output({ state, update, completedShapes }: Props) {
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
@@ -302,23 +330,48 @@ export function Step5Output({ state, update, completedShapes }: Props) {
             </div>
 
             <div className="space-y-2">
-              {validationResult!.violations.map((v: ValidationResult['violations'][number], i: number) => (
-                <div key={i} className="bg-white rounded-lg p-3 border border-red-100 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="mono text-[11px] text-red-600 font-medium">{v.focusNode}</span>
-                    <span className="text-zinc-300">·</span>
-                    <span className="mono text-[11px] text-zinc-500">{v.property}</span>
+              {validationResult!.violations.map((v: ValidationResult['violations'][number], i: number) => {
+                // Map the violation back to a property in the shape currently being
+                // edited. If it maps, offer a jump into Step 4; shape-level or
+                // cross-shape violations (no resultPath match) simply omit the button.
+                const targetProp = v.property && v.property !== '-'
+                  ? state.properties.find(p => violationLocalName(p.path) === violationLocalName(v.property))
+                  : undefined
+                return (
+                  <div key={i} className="bg-white rounded-lg p-3 border border-red-100 space-y-0.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="mono text-[11px] text-red-600 font-medium">{v.focusNode}</span>
+                          <span className="text-zinc-300">·</span>
+                          <span className="mono text-[11px] text-zinc-500">{v.property}</span>
+                        </div>
+                        <p className="text-xs text-zinc-500">{v.message}</p>
+                        {(v.severity || v.value) && (
+                          <p className="text-[10px] text-zinc-400 mono mt-1">
+                            {v.severity ? v.severity.replace('sh:', '') : ''}
+                            {v.severity && v.value ? ' · ' : ''}
+                            {v.value ?? ''}
+                          </p>
+                        )}
+                      </div>
+                      {targetProp && (
+                        <button
+                          onClick={() => update({
+                            step: 3,
+                            jumpTarget: { propertyId: targetProp.id, field: componentToField(v.sourceConstraint) },
+                          })}
+                          className="shrink-0 text-[11px] font-medium text-red-700 border border-red-300 rounded-md
+                            px-2 py-1 hover:bg-red-100 transition-colors whitespace-nowrap"
+                          title="Go to this property's constraints in Step 4"
+                        >
+                          Fix this →
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-zinc-500">{v.message}</p>
-                  {(v.severity || v.value) && (
-                    <p className="text-[10px] text-zinc-400 mono mt-1">
-                      {v.severity ? v.severity.replace('sh:', '') : ''}
-                      {v.severity && v.value ? ' · ' : ''}
-                      {v.value ?? ''}
-                    </p>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

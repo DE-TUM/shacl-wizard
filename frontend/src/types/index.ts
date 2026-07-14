@@ -135,6 +135,10 @@ export interface WizardState {
   // sh:node refs from the previous shape that don't yet have a completed shape -
   // shown as quick-pick suggestions in Step 1 of the next shape
   pendingNodeRefs:      string[]
+  // Transient "jump to error" target: set by Step 5's per-violation button to
+  // send the user back to Step 4, select the property, open its constraint
+  // section, and highlight the failed field. Cleared by Step 4 once consumed.
+  jumpTarget:           { propertyId: string; field: string | null } | null
 }
 
 export const INITIAL_STATE: WizardState = {
@@ -161,6 +165,7 @@ export const INITIAL_STATE: WizardState = {
   selectedPrefix:       'ex',
   selectedNamespace:    'http://example.org/',
   pendingNodeRefs:      [],
+  jumpTarget:           null,
 }
 
 // ─── Datatype options (shown in Step 4 constraint panel) ─────────────────────

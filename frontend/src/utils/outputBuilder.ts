@@ -50,6 +50,20 @@ function ttlEscape(value: string): string {
     .replace(/\t/g, '\\t')
 }
 
+// Split a comma-separated list value (sh:in / sh:languageIn) into clean, individual
+// terms. The AI parser sometimes yields a value with stray leading/trailing/double
+// commas (e.g. ",Audi,BMW,Mercedes") or values wrapped in stray quotes; without
+// sanitising, a naive split(',') leaves empty terms that render as a spurious ""
+// item in the RDF list. Trim whitespace, strip a single layer of wrapping quotes,
+// and drop empties so every value becomes its own well-formed term. Defensively
+// accepts an array too, in case an upstream value skipped string coercion.
+function splitListValues(value: string | string[]): string[] {
+  const raw = Array.isArray(value) ? value : String(value).split(',')
+  return raw
+    .map(v => String(v).trim().replace(/^["']|["']$/g, '').trim())
+    .filter(v => v.length > 0)
+}
+
 // Escape a free-text string for use inside an XML text node.
 function xmlEscape(value: string): string {
   return value
@@ -228,9 +242,15 @@ function subShapeInline(sub: SubShape, prefix: string): string {
   if (sub.maxExclusive) parts.push(`sh:maxExclusive ${sub.maxExclusive}`)
   if (sub.minLength)    parts.push(`sh:minLength ${sub.minLength}`)
   if (sub.maxLength)    parts.push(`sh:maxLength ${sub.maxLength}`)
-  if (sub.in)           parts.push(`sh:in ( ${sub.in.split(',').map((v: string) => `"${v.trim()}"`).join(' ')} )`)
+  if (sub.in) {
+    const values = splitListValues(sub.in)
+    if (values.length) parts.push(`sh:in ( ${values.map(v => `"${ttlEscape(v)}"`).join(' ')} )`)
+  }
   if (sub.hasValue)     parts.push(`sh:hasValue "${ttlEscape(sub.hasValue)}"`)
-  if (sub.languageIn)   parts.push(`sh:languageIn ( ${sub.languageIn.split(',').map((t: string) => `"${t.trim()}"`).join(' ')} )`)
+  if (sub.languageIn) {
+    const tags = splitListValues(sub.languageIn)
+    if (tags.length) parts.push(`sh:languageIn ( ${tags.map(t => `"${ttlEscape(t)}"`).join(' ')} )`)
+  }
   return parts.length ? `[ ${parts.join(' ; ')} ]` : '[ ]'
 }
 
@@ -247,9 +267,15 @@ function subShapeJsonLd(sub: SubShape, prefix: string): Record<string, unknown> 
   if (sub.class)      obj['sh:class']    = { '@id': p(sub.class) }
   if (sub.node)       obj['sh:node']     = { '@id': sub.node.includes(':') ? sub.node : p(sub.node) }
   if (sub.pattern)    obj['sh:pattern']  = anchorPattern(sub.pattern)
-  if (sub.in)         obj['sh:in'] = { '@list': sub.in.split(',').map((v: string) => v.trim()) }
+  if (sub.in) {
+    const values = splitListValues(sub.in)
+    if (values.length) obj['sh:in'] = { '@list': values }
+  }
   if (sub.hasValue)   obj['sh:hasValue'] = sub.hasValue
-  if (sub.languageIn) obj['sh:languageIn'] = { '@list': sub.languageIn.split(',').map((t: string) => t.trim()) }
+  if (sub.languageIn) {
+    const tags = splitListValues(sub.languageIn)
+    if (tags.length) obj['sh:languageIn'] = { '@list': tags }
+  }
   return obj
 }
 
@@ -274,12 +300,12 @@ function buildConstraintLines(c: PropertyConstraints, prefix: string): string[] 
     lines.push(`        sh:node ${nodeRef} ;`)
   }
   if (c.in) {
-    const values = c.in.split(',').map((v: string) => `"${v.trim()}"`).join(' ')
-    lines.push(`        sh:in ( ${values} ) ;`)
+    const values = splitListValues(c.in)
+    if (values.length) lines.push(`        sh:in ( ${values.map(v => `"${ttlEscape(v)}"`).join(' ')} ) ;`)
   }
   if (c.languageIn) {
-    const tags = c.languageIn.split(',').map((t: string) => `"${t.trim()}"`).join(' ')
-    lines.push(`        sh:languageIn ( ${tags} ) ;`)
+    const tags = splitListValues(c.languageIn)
+    if (tags.length) lines.push(`        sh:languageIn ( ${tags.map(t => `"${ttlEscape(t)}"`).join(' ')} ) ;`)
   }
   if (c.hasValue)   lines.push(`        sh:hasValue "${ttlEscape(c.hasValue)}" ;`)
   if (c.uniqueLang === 'true') lines.push('        sh:uniqueLang true ;')
@@ -394,10 +420,12 @@ function buildJsonLdProperty(prop: PropertyShape, prefix: string): Record<string
   if (c.pattern)  obj['sh:pattern']  = anchorPattern(c.pattern)
 
   if (c.in) {
-    obj['sh:in'] = { '@list': c.in.split(',').map((v: string) => v.trim()) }
+    const values = splitListValues(c.in)
+    if (values.length) obj['sh:in'] = { '@list': values }
   }
   if (c.languageIn) {
-    obj['sh:languageIn'] = { '@list': c.languageIn.split(',').map((t: string) => t.trim()) }
+    const tags = splitListValues(c.languageIn)
+    if (tags.length) obj['sh:languageIn'] = { '@list': tags }
   }
   if (c.hasValue) obj['sh:hasValue'] = c.hasValue
   if (c.uniqueLang === 'true') obj['sh:uniqueLang'] = { '@value': true, '@type': 'xsd:boolean' }

@@ -407,14 +407,44 @@ def _node_is_allowed(
 
 
 def _normalize_in_value(value: str | list) -> str:
+    """Normalise an enumerated sh:in value into a clean comma-separated string.
+
+    The LLM is inconsistent about how it formats the list: sometimes a plain
+    'BMW, Audi, Mercedes', but sometimes wrapped in RDF-list / SHACL / JSON
+    syntax such as '( "BMW" "Audi" "Mercedes" )', '("BMW","Audi")',
+    '["BMW","Audi"]', or even prefixed with 'sh:in'. Naively splitting such a
+    value leaks the wrapper characters (parens/brackets) into the first and last
+    terms (e.g. '(,BMW,Audi,)'). Strip the wrapper, prefer quoted spans, and
+    sanitise each term so every value comes out as its own clean token.
+    """
     if isinstance(value, list):
-        return _list_to_csv(value)
-    if "," in value:
-        tokens = [t.strip().strip("\"'") for t in value.split(",")]
+        items: list[str] = [str(x) for x in value]
     else:
-        tokens = re.findall(r'"[^"]*"|\'[^\']*\'|\S+', value)
-        tokens = [t.strip("\"'") for t in tokens]
-    return ",".join(t for t in tokens if t)
+        text = str(value).strip()
+        # Drop a leading 'sh:in' and one surrounding ()/[] wrapper so those
+        # characters can't leak into the values.
+        text = re.sub(r"^\s*sh:in\b\s*", "", text, flags=re.IGNORECASE).strip()
+        if len(text) >= 2 and text[0] in "([" and text[-1] in ")]":
+            text = text[1:-1].strip()
+        # Prefer explicitly quoted spans (handles both comma- and space-separated
+        # quoted lists, and preserves commas inside a quoted value); otherwise
+        # fall back to comma, then whitespace, splitting.
+        quoted = re.findall(r'"([^"]*)"|\'([^\']*)\'', text)
+        if quoted:
+            items = [a or b for a, b in quoted]
+        elif "," in text:
+            items = text.split(",")
+        else:
+            items = text.split()
+
+    cleaned: list[str] = []
+    for item in items:
+        token = str(item).strip().strip("\"'()[]").strip()
+        # Drop a leading conjunction the LLM sometimes keeps from "A, B, or C".
+        token = re.sub(r"^(?:or|and)\s+", "", token, flags=re.IGNORECASE).strip()
+        if token:
+            cleaned.append(token)
+    return ",".join(cleaned)
 
 
 def _build_user_message(request: ParseNLRequest) -> str:

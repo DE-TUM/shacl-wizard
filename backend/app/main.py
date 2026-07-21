@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.models import (
     GenerateResponse,
+    OntologyParseResponse,
     ParseNLRequest,
     ParseNLResponse,
     ParseRDFResponse,
@@ -19,7 +20,12 @@ from app.models import (
     WizardState,
 )
 from app.services.llm_parser import parse_natural_language
-from app.services.rdf_parser import guess_rdf_format, parse_rdf_from_file, parse_rdf_full
+from app.services.rdf_parser import (
+    guess_rdf_format,
+    parse_ontology_text,
+    parse_rdf_from_file,
+    parse_rdf_full,
+)
 from app.services.shapes import build_shapes_response
 from app.services.validator import run_pyshacl_validation
 
@@ -126,6 +132,30 @@ async def parse_rdf(
             return await anyio.to_thread.run_sync(fn)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Could not parse RDF graph: {exc}") from exc
+
+
+@router.post("/parse-ontology", response_model=OntologyParseResponse)
+async def parse_ontology(
+    data_file: UploadFile | None = File(default=None),
+    graph_text: str | None = Form(default=None),
+    rdf_format: str | None = Form(default=None),
+) -> OntologyParseResponse:
+    if data_file is None and not graph_text:
+        raise HTTPException(status_code=400, detail="Provide data_file or graph_text.")
+
+    if data_file is not None:
+        content = await data_file.read()
+        text = _decode_bytes(content, data_file.filename)
+        filename = data_file.filename
+    else:
+        text = graph_text or ""
+        filename = "pasted-ontology.ttl"
+
+    try:
+        fn = functools.partial(parse_ontology_text, text, filename, rdf_format)
+        return await anyio.to_thread.run_sync(fn)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not parse ontology: {exc}") from exc
 
 
 @router.post("/validate", response_model=ValidationResponse)

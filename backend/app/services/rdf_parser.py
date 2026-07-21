@@ -9,7 +9,7 @@ from typing import Any
 from rdflib import BNode, Dataset, Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS, SH, XSD
 
-from app.models import ParseRDFResponse
+from app.models import OntologyParseResponse, ParseRDFResponse
 
 FORMAT_BY_EXTENSION = {
     ".ttl": "turtle",
@@ -18,6 +18,7 @@ FORMAT_BY_EXTENSION = {
     ".json": "json-ld",
     ".rdf": "xml",
     ".xml": "xml",
+    ".owl": "xml",
     ".n3": "n3",
     ".nt": "nt",
     ".trig": "trig",
@@ -630,6 +631,185 @@ def extract_rdf_hints(
         propertiesByClass=sorted_pbc,
         prefixes=dict(sorted(prefixes.items())),
         detectedDatatypes=dict(sorted(detected_datatypes.items())),
+    )
+
+
+def parse_ontology_text(
+    graph_text: str,
+    filename: str | None,
+    rdf_format: str | None,
+) -> OntologyParseResponse:
+    """Parse an ontology file with plain RDFLib - no Jena, no sampling tiers.
+
+    Ontology files describe schema, not instances, so they're small enough that
+    the data-graph pipeline's large-file machinery doesn't apply.
+    """
+    resolved_format = rdf_format or guess_rdf_format(filename)
+    graph = Graph()
+    graph.parse(data=graph_text, format=resolved_format)
+    return extract_ontology_hints(graph)
+
+
+def extract_ontology_hints(graph: Graph) -> OntologyParseResponse:
+    """Declared (not statistical) schema facts: owl:FunctionalProperty,
+    rdfs:domain/range, rdfs:subClassOf.
+
+    Parallel to extract_rdf_hints, not a modification of it - ontology facts are
+    declared by the schema author, not observed/inferred from instance data, so
+    they get their own extraction path rather than feeding infer_constraints.
+    """
+    # Prefixes are resolved independently of the paired data graph (if any) -
+    # same resolution order as extract_rdf_hints's declared_prefixes-is-None
+    # branch (KNOWN_NAMESPACES, then RDFLib's own bindings, then a synthesized
+    # short name), since an ontology file may declare different prefixes.
+    meaningful_ns_bases: set[str] = set()
+    for s, p, o in graph:
+        for term in (s, p, o):
+            if isinstance(term, URIRef):
+                base = _ns_base(str(term))
+                if base:
+                    meaningful_ns_bases.add(base)
+
+    ns_to_prefix: dict[str, str] = {
+        str(ns): pfx for pfx, ns in graph.namespace_manager.namespaces() if pfx
+    }
+    used_names: set[str] = set()
+    prefixes: dict[str, str] = {}
+    for ns_str in sorted(meaningful_ns_bases):
+        if ns_str in KNOWN_NAMESPACES:
+            name = KNOWN_NAMESPACES[ns_str]
+        elif ns_str in ns_to_prefix:
+            name = ns_to_prefix[ns_str]
+        else:
+            name = _derive_prefix_name(ns_str, used_names)
+        used_names.add(name)
+        prefixes[name] = ns_str
+
+    ns_inv: dict[str, str] = {ns: pfx for pfx, ns in prefixes.items()}
+
+    def _to_curie(uri: URIRef) -> str:
+        s = str(uri)
+        nb = _ns_base(s)
+        if nb and nb in ns_inv:
+            return f"{ns_inv[nb]}:{s[len(nb):]}"
+        return s
+
+    # owl:FunctionalProperty -> sh:maxCount 1
+    functional_properties = sorted({
+        _to_curie(prop) for prop in graph.subjects(RDF.type, OWL.FunctionalProperty)
+        if isinstance(prop, URIRef)
+    })
+
+    # Explicit class declarations - the base of the "all classes" union below.
+    # A class can be declared this way with no subClassOf, no property domain,
+    # and no restriction, so this is necessary and not redundant with those.
+    declared_classes: set[str] = {
+        _local_name(cls) for cls in graph.subjects(RDF.type, OWL.Class)
+        if isinstance(cls, URIRef) and not _is_builtin_uri(cls)
+    }
+    declared_classes |= {
+        _local_name(cls) for cls in graph.subjects(RDF.type, RDFS.Class)
+        if isinstance(cls, URIRef) and not _is_builtin_uri(cls)
+    }
+
+    # rdfs:domain -> property-to-class association (parallel to the data graph's
+    # subject-membership-derived propertiesByClass)
+    property_domains: dict[str, set[str]] = {}
+    for prop, _, cls in graph.triples((None, RDFS.domain, None)):
+        if isinstance(prop, URIRef) and isinstance(cls, URIRef) and not _is_builtin_uri(cls):
+            property_domains.setdefault(_to_curie(prop), set()).add(_local_name(cls))
+
+    # rdfs:range -> sh:datatype (XSD range) or sh:class + sh:IRI (class range)
+    property_ranges: dict[str, dict] = {}
+    for prop, _, rng in graph.triples((None, RDFS.range, None)):
+        if not isinstance(prop, URIRef) or not isinstance(rng, URIRef):
+            continue
+        prop_curie = _to_curie(prop)
+        if str(rng) in _XSD_CURIE_MAP:
+            property_ranges[prop_curie] = {"datatype": _XSD_CURIE_MAP[str(rng)]}
+        elif not _is_builtin_uri(rng):
+            property_ranges[prop_curie] = {"class": _to_curie(rng), "nodeKind": "sh:IRI"}
+
+    # rdfs:subClassOf -> single-parent class hierarchy (child -> parent, both
+    # local names to match suggestedClasses' existing convention). Not a sh:
+    # mapping - used only to improve the Step 1 class picker. Deterministic
+    # alphabetically-first parent when a class declares more than one.
+    class_hierarchy: dict[str, str] = {}
+    for child, _, parent in graph.triples((None, RDFS.subClassOf, None)):
+        if (
+            isinstance(child, URIRef) and isinstance(parent, URIRef)
+            and not _is_builtin_uri(child) and not _is_builtin_uri(parent)
+        ):
+            child_name = _local_name(child)
+            parent_name = _local_name(parent)
+            if child_name not in class_hierarchy or parent_name < class_hierarchy[child_name]:
+                class_hierarchy[child_name] = parent_name
+
+    # owl:Restriction cardinality/value-type, scoped to the class it's declared
+    # on. Unlike the four blocks above (all global-per-property), a restriction
+    # only holds for instances of the specific class it's attached to via
+    # rdfs:subClassOf or owl:equivalentClass - e.g. "Person requires >=2
+    # hasParent" must not apply to every use of hasParent graph-wide. Restriction
+    # nodes are always blank nodes; a named-class object on the same predicate is
+    # a plain hierarchy edge, already handled above.
+    class_restricted: dict[str, dict[str, dict]] = {}
+    for restriction_pred in (RDFS.subClassOf, OWL.equivalentClass):
+        for cls, _, restriction in graph.triples((None, restriction_pred, None)):
+            if not isinstance(cls, URIRef) or _is_builtin_uri(cls):
+                continue
+            if not isinstance(restriction, BNode):
+                continue
+            if (restriction, RDF.type, OWL.Restriction) not in graph:
+                continue
+            prop = graph.value(restriction, OWL.onProperty)
+            if not isinstance(prop, URIRef):
+                continue
+
+            constraints: dict[str, str] = {}
+            exact = graph.value(restriction, OWL.cardinality)
+            if exact is not None:
+                constraints["minCount"] = constraints["maxCount"] = str(exact)
+            else:
+                min_card = graph.value(restriction, OWL.minCardinality)
+                max_card = graph.value(restriction, OWL.maxCardinality)
+                if min_card is not None:
+                    constraints["minCount"] = str(min_card)
+                if max_card is not None:
+                    constraints["maxCount"] = str(max_card)
+
+            value_from = graph.value(restriction, OWL.someValuesFrom) or graph.value(restriction, OWL.allValuesFrom)
+            if isinstance(value_from, URIRef):
+                if str(value_from) in _XSD_CURIE_MAP:
+                    constraints["datatype"] = _XSD_CURIE_MAP[str(value_from)]
+                elif not _is_builtin_uri(value_from):
+                    constraints["class"] = _to_curie(value_from)
+                    constraints["nodeKind"] = "sh:IRI"
+
+            if constraints:
+                by_prop = class_restricted.setdefault(_local_name(cls), {})
+                by_prop.setdefault(_to_curie(prop), {}).update(constraints)
+
+    # All classes declared anywhere in the ontology - union of explicit
+    # owl:Class/rdfs:Class declarations with every class name that surfaces via
+    # the three fields above. None of the three alone is complete (see comment
+    # on OntologyParseResponse.classes).
+    all_classes = set(declared_classes)
+    all_classes.update(class_hierarchy.keys())
+    all_classes.update(class_hierarchy.values())
+    for domain_classes in property_domains.values():
+        all_classes.update(domain_classes)
+    all_classes.update(class_restricted.keys())
+
+    return OntologyParseResponse(
+        functionalProperties=functional_properties,
+        propertyDomains={k: sorted(v) for k, v in sorted(property_domains.items())},
+        propertyRanges=dict(sorted(property_ranges.items())),
+        classHierarchy=dict(sorted(class_hierarchy.items())),
+        classRestrictedConstraints={
+            cls: dict(sorted(props.items())) for cls, props in sorted(class_restricted.items())
+        },
+        classes=sorted(all_classes),
+        prefixes=dict(sorted(prefixes.items())),
     )
 
 

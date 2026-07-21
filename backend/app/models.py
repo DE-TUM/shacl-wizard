@@ -197,6 +197,35 @@ class ParseRDFResponse(CamelModel):
     inference_limited: bool = Field(default=False, alias="inferenceLimited")
 
 
+class OntologyParseResponse(CamelModel):
+    """Declared (not statistical) schema facts extracted from an OWL/RDFS ontology.
+
+    Property keys are CURIEs and class values are local names, matching the
+    conventions already used by ParseRDFResponse, so the frontend can merge the
+    two sources without a convention mismatch.
+    """
+    functional_properties: list[str] = Field(default_factory=list, alias="functionalProperties")
+    property_domains: dict[str, list[str]] = Field(default_factory=dict, alias="propertyDomains")
+    property_ranges: dict[str, dict] = Field(default_factory=dict, alias="propertyRanges")
+    class_hierarchy: dict[str, str] = Field(default_factory=dict, alias="classHierarchy")
+    # owl:Restriction cardinality/value-type facts, scoped to the class they were
+    # declared on (via rdfs:subClassOf or owl:equivalentClass) - {class local name
+    # -> {property CURIE -> constraint fields}}. Kept separate from the four
+    # fields above, which are all global-per-property; a restriction only holds
+    # for the specific class it's attached to.
+    class_restricted_constraints: dict[str, dict[str, dict]] = Field(
+        default_factory=dict, alias="classRestrictedConstraints"
+    )
+    # Every class declared anywhere in the ontology - explicit owl:Class/rdfs:Class
+    # declarations, plus every class name that surfaces via the fields above
+    # (classHierarchy, propertyDomains, classRestrictedConstraints). None of those
+    # three alone is a complete class list (e.g. a class with no subClassOf, no
+    # property domain, and no restriction never appears in any of them), so this
+    # is the union - same local-name convention as ParseRDFResponse.classes.
+    classes: list[str] = Field(default_factory=list)
+    prefixes: dict[str, str] = Field(default_factory=dict)
+
+
 class Violation(CamelModel):
     focus_node: str = Field(alias="focusNode")
     property: str

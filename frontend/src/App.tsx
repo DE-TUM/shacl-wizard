@@ -6,7 +6,7 @@
  *
  * Screen routing (simple - no React Router needed):
  *   state.mode === ''       → ModeSelect (landing)
- *   state.mode === 'upload' && !uploadedFileName → UploadScreen
+ *   state.mode === 'upload' && !uploadStepDone → UploadScreen
  *   otherwise               → Wizard card (steps 0–4)
  */
 
@@ -85,11 +85,15 @@ export default function App() {
     setState({
       ...INITIAL_STATE,
       mode:                state.mode,
+      uploadStepDone:      state.uploadStepDone,
       uploadedFileName:    state.uploadedFileName,
       suggestedClasses:    state.suggestedClasses,
       suggestedProperties: state.suggestedProperties,
       propertiesByClass:   state.propertiesByClass,
       suggestedConstraints: state.suggestedConstraints,
+      classHierarchy:      state.classHierarchy,
+      ontologyConstraintsByClass: state.ontologyConstraintsByClass,
+      inferenceLimited:    state.inferenceLimited,
       completedShapes:     allCompleted,
       selectedPrefix:      state.selectedPrefix,
       selectedNamespace:   state.selectedNamespace,
@@ -117,12 +121,13 @@ export default function App() {
   }
 
   // ── Upload mode: show file picker before the wizard ─────────────────────────
-  if (state.mode === 'upload' && !state.uploadedFileName) {
+  // Unlike every other screen, this one renders two independent card-styled
+  // windows (not content nested inside a single shared WizardCard), so it
+  // needs a wider Shell to fit both at full size side by side.
+  if (state.mode === 'upload' && !state.uploadStepDone) {
     return (
-      <Shell>
-        <WizardCard>
-          <UploadScreen update={update} onBack={() => update({ mode: '' })} />
-        </WizardCard>
+      <Shell maxWidthClass="max-w-[888px]">
+        <UploadScreen state={state} update={update} onBack={() => update({ mode: '' })} />
       </Shell>
     )
   }
@@ -280,10 +285,10 @@ export default function App() {
 
 // ─── Layout helpers ───────────────────────────────────────────────────────────
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, maxWidthClass = 'max-w-[540px]' }: { children: React.ReactNode; maxWidthClass?: string }) {
   return (
     <div className="min-h-screen bg-[#f7f7f5] flex items-start justify-center py-10 px-4 overflow-x-hidden">
-      <div className="w-full max-w-[540px]">{children}</div>
+      <div className={`w-full ${maxWidthClass}`}>{children}</div>
     </div>
   )
 }

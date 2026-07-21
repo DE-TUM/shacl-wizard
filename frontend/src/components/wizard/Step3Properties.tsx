@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
 import { suggestProperties } from '@/api/backend'
+import { unwrapSuggested, lookupSuggestedConstraint } from '@/utils/suggestedConstraints'
 import { InfoTip } from './InfoTip'
 
 function uid() {
@@ -76,7 +77,7 @@ export function Step3Properties({ state, update }: Props) {
     const p = (path ?? input).trim()
     if (!p || p.toLowerCase() === state.targetValue.toLowerCase()) return
     if (state.properties.some(prop => prop.path.toLowerCase() === p.toLowerCase())) return
-    const inferred = state.suggestedConstraints?.[p] ?? {}
+    const inferred = unwrapSuggested(lookupSuggestedConstraint(state.suggestedConstraints, state.ontologyConstraintsByClass, state.targetValue, p))
     const prop: PropertyShape = { id: uid(), path: p, constraints: inferred }
     update({ properties: [...state.properties, prop] })
     setInput('')
@@ -86,7 +87,7 @@ export function Step3Properties({ state, update }: Props) {
     // Batch all not-yet-added detected properties into one state update
     const newProps: PropertyShape[] = uploadSuggestions
       .filter(p => p.toLowerCase() !== state.targetValue.toLowerCase())
-      .map(p => ({ id: uid(), path: p, constraints: state.suggestedConstraints?.[p] ?? {} }))
+      .map(p => ({ id: uid(), path: p, constraints: unwrapSuggested(lookupSuggestedConstraint(state.suggestedConstraints, state.ontologyConstraintsByClass, state.targetValue, p)) }))
     if (newProps.length === 0) return
     update({ properties: [...state.properties, ...newProps] })
   }
@@ -120,6 +121,12 @@ export function Step3Properties({ state, update }: Props) {
           <span className="mono text-zinc-700">{pfx}:{state.targetValue}</span> nodes.
         </p>
       </div>
+
+      {state.mode === 'upload' && state.inferenceLimited && (
+        <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 text-xs text-zinc-600">
+          This file is too large, so some constraint suggestions were skipped.
+        </div>
+      )}
 
       {/* Input with floating pill overlay */}
       <div className="space-y-1.5">

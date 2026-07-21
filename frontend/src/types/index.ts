@@ -92,6 +92,20 @@ export interface PropertyShape {
   constraints: PropertyConstraints
 }
 
+// ─── Suggested-constraint provenance ──────────────────────────────────────────
+// WizardState.suggestedConstraints is a *suggestion pool*, distinct from
+// PropertyShape.constraints (the bare-value constraints actually attached to a
+// property once added, edited in Step 4, and emitted to the output). Each field
+// here carries which source it came from, so Step 2/3 can apply precedence
+// (ontology wins when present, else the data graph) when a suggestion is
+// accepted into a property - the tag itself never propagates into
+// PropertyShape.constraints.
+export interface SuggestedConstraintValue {
+  value:  string
+  source: 'ontology' | 'dataGraph'
+}
+export type SuggestedConstraints = Record<string, Partial<Record<keyof PropertyConstraints, SuggestedConstraintValue>>>
+
 export interface CompletedShape {
   shapeName:    string
   targetType:   TargetType
@@ -126,8 +140,21 @@ export interface WizardState {
   suggestedClasses:     string[]
   suggestedProperties:  string[]
   propertiesByClass:    Record<string, string[]>
-  suggestedConstraints: Record<string, Partial<PropertyConstraints>>
+  suggestedConstraints: SuggestedConstraints
   completedShapes:      CompletedShape[]
+  // rdfs:subClassOf, child local name -> parent local name (ontology-only;
+  // the data graph has no schema-level hierarchy). Not a sh: mapping - used to
+  // annotate the Step 1 class picker.
+  classHierarchy:       Record<string, string>
+  // owl:Restriction facts, scoped to the class they're declared on: class
+  // local name -> property CURIE -> bare-value constraint fields. Kept
+  // separate from suggestedConstraints (which is property-only, no class
+  // scoping) since a restriction only holds for the specific class it's
+  // attached to - looked up via lookupSuggestedConstraint, not read directly.
+  ontologyConstraintsByClass: Record<string, Record<string, Partial<PropertyConstraints>>>
+  // True when the data graph's inference_limit_triples gate skipped
+  // minCount/maxCount/sh:in/class/numeric/language inference (large file).
+  inferenceLimited:     boolean
   // Namespace / prefix selection
   detectedPrefixes:     Record<string, string>   // from uploaded file, e.g. { ub: 'http://...' }
   selectedPrefix:       string                   // e.g. 'ub'
@@ -139,6 +166,11 @@ export interface WizardState {
   // send the user back to Step 4, select the property, open its constraint
   // section, and highlight the failed field. Cleared by Step 4 once consumed.
   jumpTarget:           { propertyId: string; field: string | null } | null
+  // True once the user has explicitly clicked "Next"/"Proceed" past the
+  // upload screen (with or without files). Gates leaving UploadScreen -
+  // uploading a file no longer auto-advances, since the user may still want
+  // to add a second file (data graph + ontology) before continuing.
+  uploadStepDone:       boolean
 }
 
 export const INITIAL_STATE: WizardState = {
@@ -161,11 +193,15 @@ export const INITIAL_STATE: WizardState = {
   propertiesByClass:    {},
   suggestedConstraints: {},
   completedShapes:      [],
+  classHierarchy:       {},
+  ontologyConstraintsByClass: {},
+  inferenceLimited:     false,
   detectedPrefixes:     {},
   selectedPrefix:       'ex',
   selectedNamespace:    'http://example.org/',
   pendingNodeRefs:      [],
   jumpTarget:           null,
+  uploadStepDone:       false,
 }
 
 // ─── Datatype options (shown in Step 4 constraint panel) ─────────────────────
@@ -200,4 +236,24 @@ export interface ParseResponse {
   prefixes:             Record<string, string>
   detectedDatatypes:    Record<string, string>
   suggestedConstraints?: Record<string, Partial<PropertyConstraints>>
+  inferenceLimited?:    boolean
+}
+
+// Declared (not statistical) schema facts extracted from an ontology file.
+// Property keys are CURIEs, class values are local names - same convention as
+// ParseResponse, so the two sources merge without a convention mismatch.
+export interface OntologyParseResponse {
+  functionalProperties: string[]
+  propertyDomains:      Record<string, string[]>
+  propertyRanges:       Record<string, { datatype?: string; class?: string; nodeKind?: string }>
+  classHierarchy:       Record<string, string>
+  // owl:Restriction facts, scoped to the class they're declared on (unlike the
+  // four fields above, which are all global-per-property): class local name ->
+  // property CURIE -> constraint fields.
+  classRestrictedConstraints: Record<string, Record<string, Partial<PropertyConstraints>>>
+  // Every class declared anywhere in the ontology (union of explicit
+  // owl:Class/rdfs:Class declarations with classHierarchy, propertyDomains, and
+  // classRestrictedConstraints - none of those three alone is complete).
+  classes:               string[]
+  prefixes:             Record<string, string>
 }

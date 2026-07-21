@@ -260,19 +260,26 @@ export function Step1Target({ state, update }: Props) {
                 </InfoTip>
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {state.suggestedClasses.map(cls => (
-                  <button
-                    key={cls}
-                    onClick={() => update({ targetValue: cls })}
-                    className={`text-xs px-3 py-1 rounded-full border transition-colors mono
-                      ${state.targetValue === cls
-                        ? 'bg-zinc-900 text-white border-zinc-900'
-                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-                    `}
-                  >
-                    {pfx}:{cls}
-                  </button>
-                ))}
+                {state.suggestedClasses.map(cls => {
+                  const parent = state.classHierarchy[cls]
+                  return (
+                    <button
+                      key={cls}
+                      onClick={() => update({ targetValue: cls })}
+                      title={parent ? `Subclass of ${parent}` : undefined}
+                      className={`text-xs px-3 py-1 rounded-full border transition-colors mono flex items-center gap-1
+                        ${state.targetValue === cls
+                          ? 'bg-zinc-900 text-white border-zinc-900'
+                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                      `}
+                    >
+                      {pfx}:{cls}
+                      {parent && (
+                        <span className="text-[9px] text-zinc-400">⊂ {parent}</span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}

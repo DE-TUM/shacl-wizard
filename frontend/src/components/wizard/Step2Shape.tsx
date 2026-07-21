@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { parseNaturalLanguage } from '@/api/backend'
-import type { WizardState, PropertyShape, PropertyConstraints, CompletedShape } from '@/types'
+import type { WizardState, PropertyShape, PropertyConstraints, CompletedShape, SuggestedConstraints } from '@/types'
+import { unwrapSuggested, lookupSuggestedConstraint } from '@/utils/suggestedConstraints'
 import { InfoTip } from './InfoTip'
 
 interface Props {
@@ -13,21 +14,27 @@ function uid() {
   return Math.random().toString(36).slice(2, 8)
 }
 
+// `up` is a suggestedConstraints entry: each field carries its winning source
+// (ontology or dataGraph, already resolved by UploadScreen's merge) alongside
+// the value. That source tag only matters for this arbitration - the result
+// written into a property's own `constraints` stays a plain bare-value object,
+// same as before.
 function mergeConstraints(
   ai: PropertyConstraints,
-  up: Partial<PropertyConstraints>,
+  up: SuggestedConstraints[string],
 ): PropertyConstraints {
   const result: PropertyConstraints = { ...ai }
 
-  // nodeKind: upload wins (upload observed real IRI values in the file)
+  // nodeKind: upload wins (upload observed real IRI values in the file, or the
+  // ontology declared it via rdfs:range)
   if (up.nodeKind) {
-    result.nodeKind = up.nodeKind
-    if (up.nodeKind === 'sh:IRI') delete result.datatype
+    result.nodeKind = up.nodeKind.value
+    if (up.nodeKind.value === 'sh:IRI') delete result.datatype
   }
 
   // datatype: upload wins only when it found a concrete XSD type and AI didn't set one
   if (up.datatype && !ai.datatype) {
-    result.datatype = up.datatype
+    result.datatype = up.datatype.value
   }
 
   // Everything else follows AI-wins rules (in, range bounds, minCount, maxCount, pattern):
@@ -46,12 +53,25 @@ function localName(path: string): string {
 
 function mergeWithUpload(
   aiProps: PropertyShape[],
-  upload: Record<string, Partial<PropertyConstraints>>,
+  suggestedConstraints: SuggestedConstraints,
+  ontologyConstraintsByClass: Record<string, Record<string, Partial<PropertyConstraints>>>,
+  targetClass: string,
 ): PropertyShape[] {
-  // Index upload entries by local name → [full CURIE path, constraints]
-  const uploadIndex = new Map<string, [string, Partial<PropertyConstraints>]>()
-  for (const [path, constraints] of Object.entries(upload)) {
-    uploadIndex.set(localName(path), [path, constraints])
+  // Union of properties known via the flat suggestion pool or a class-scoped
+  // owl:Restriction for the current target class. Each is resolved through
+  // lookupSuggestedConstraint - the same precedence helper Step 3 uses - so a
+  // property behaves identically whether it's added here (AI-NL merge) or via
+  // Step 3's pill/manual-entry path.
+  const allPaths = new Set([
+    ...Object.keys(suggestedConstraints),
+    ...Object.keys(ontologyConstraintsByClass[targetClass] ?? {}),
+  ])
+  const uploadIndex = new Map<string, [string, SuggestedConstraints[string]]>()
+  for (const path of allPaths) {
+    uploadIndex.set(
+      localName(path),
+      [path, lookupSuggestedConstraint(suggestedConstraints, ontologyConstraintsByClass, targetClass, path)],
+    )
   }
 
   // Start with AI properties, merging upload data where local names overlap.
@@ -73,9 +93,10 @@ function mergeWithUpload(
   }
 
   // Append upload-only properties that AI didn't mention
-  for (const [path, constraints] of Object.entries(upload)) {
+  for (const path of allPaths) {
     if (!usedUploadKeys.has(localName(path))) {
-      merged.push({ id: uid(), path, constraints: constraints as PropertyConstraints })
+      const constraints = lookupSuggestedConstraint(suggestedConstraints, ontologyConstraintsByClass, targetClass, path)
+      merged.push({ id: uid(), path, constraints: unwrapSuggested(constraints) })
     }
   }
 
@@ -92,10 +113,12 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
     setParsing(true)
     try {
       const result = await parseNaturalLanguage(state)
-      const properties =
-        Object.keys(state.suggestedConstraints).length > 0
-          ? mergeWithUpload(result.properties, state.suggestedConstraints)
-          : result.properties
+      const hasUploadData =
+        Object.keys(state.suggestedConstraints).length > 0 ||
+        Object.keys(state.ontologyConstraintsByClass[state.targetValue] ?? {}).length > 0
+      const properties = hasUploadData
+        ? mergeWithUpload(result.properties, state.suggestedConstraints, state.ontologyConstraintsByClass, state.targetValue)
+        : result.properties
       update({ properties, nlParsed: true })
     } catch (err) {
       console.error('NL parse failed:', err)

@@ -216,8 +216,15 @@ def _apply_guards(
     for prop in list(merged.keys()):
         constraints = merged[prop]
 
-        # class — LLM must never set this
-        constraints.pop("class", None)
+        # class — the LLM must never be the source of this value. Restore
+        # Python's own inferred value if it had one (even if the LLM merge
+        # tried to remove or change it); otherwise strip whatever the LLM
+        # introduced. Mirrors the minCount/maxCount restoration pattern below.
+        python_class = inferred.get(prop, {}).get("class")
+        if python_class is not None:
+            constraints["class"] = python_class
+        else:
+            constraints.pop("class", None)
 
         # pattern — accept only if it compiles as a valid regex and is not absurdly long
         if "pattern" in constraints:

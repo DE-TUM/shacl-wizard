@@ -1,4 +1,4 @@
-import type { GenerateResponse, ParseResponse, PropertyShape, WizardState } from '@/types'
+import type { GenerateResponse, OntologyParseResponse, ParseResponse, PropertyShape, WizardState } from '@/types'
 
 export interface ParseNLResponse {
   properties: PropertyShape[]
@@ -116,6 +116,39 @@ export function parseRdfText(graphText: string): Promise<ParseResponse> {
   const timeoutId = setTimeout(() => controller.abort(), RDF_PARSE_TIMEOUT_MS)
 
   return requestJson<ParseResponse>('/api/parse-rdf', {
+    method: 'POST',
+    body: formData,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeoutId))
+}
+
+// Ontology files are schema-bound (small), so a much shorter timeout than the
+// data-graph parse suffices - no Jena, no sampling, plain RDFLib on the backend.
+const ONTOLOGY_PARSE_TIMEOUT_MS = 60_000
+
+export function parseOntologyFile(file: File): Promise<OntologyParseResponse> {
+  const formData = new FormData()
+  formData.append('data_file', file)
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), ONTOLOGY_PARSE_TIMEOUT_MS)
+
+  return requestJson<OntologyParseResponse>('/api/parse-ontology', {
+    method: 'POST',
+    body: formData,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeoutId))
+}
+
+export function parseOntologyText(graphText: string): Promise<OntologyParseResponse> {
+  const formData = new FormData()
+  formData.append('graph_text', graphText)
+  formData.append('rdf_format', 'turtle')
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), ONTOLOGY_PARSE_TIMEOUT_MS)
+
+  return requestJson<OntologyParseResponse>('/api/parse-ontology', {
     method: 'POST',
     body: formData,
     signal: controller.signal,

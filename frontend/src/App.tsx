@@ -272,12 +272,26 @@ export default function App() {
             state.step === 2 ? 'Detected properties' :
                                'Constraint editor'
           }
-          className={`absolute top-0 left-full ml-6 w-[486px] transition-[transform,opacity] duration-200 ease-out
+          className={`absolute top-0 bottom-0 left-full ml-6 w-[486px] transition-[transform,opacity] duration-200 ease-out
             ${panelOpen ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0 pointer-events-none'}`}
         >
+          {/* top-0 + bottom-0 gives the aside a definite (non-"auto") computed
+              height equal to WizardCard's rendered height (the nearest
+              positioned ancestor, `.relative` below, has no height of its own
+              beyond what its in-flow child - WizardCard - gives it). That lets
+              the inner div's max-h-full resolve against a real pixel value:
+              short content still shrinks to fit naturally, and the scrollbar
+              only kicks in once content would grow taller than the main
+              wizard window - never a fixed viewport-based cutoff.
+              flex flex-col lets a portaled panel's own root (if it opts in
+              with min-h-0, as Step 1/3's detected-item browsers do) clamp to
+              this box's height and scroll only an inner region while a fixed
+              header stays put; content that doesn't opt in (Step 4's
+              constraint editor) is unaffected and keeps scrolling via this
+              div's own overflow-y-auto exactly as before. */}
           <div
             ref={setSlotNode}
-            className="bg-white rounded-2xl border border-zinc-200 shadow-sm p-5 max-h-[calc(100vh-6rem)] overflow-y-auto"
+            className="max-h-full flex flex-col bg-white rounded-2xl border border-zinc-200 shadow-sm p-5 overflow-y-auto"
           />
         </aside>
       </div>

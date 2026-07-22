@@ -1,11 +1,14 @@
 // Step 1 - Target declaration.
 // The user picks what kind of resources they want to validate and names them.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { TargetCard } from './TargetCard'
 import { TARGET_OPTIONS } from '@/types'
 import type { WizardState, TargetType } from '@/types'
 import { InfoTip } from './InfoTip'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { MaybePortal } from './MaybePortal'
+import { ClassDetectionPanel } from './ClassDetectionPanel'
 
 // Prefixes always shown as quick-pick fallbacks regardless of what the file contained.
 const COMMON_PREFIXES: Array<{ prefix: string; namespace: string }> = [
@@ -19,6 +22,12 @@ const COMMON_PREFIXES: Array<{ prefix: string; namespace: string }> = [
 interface Props {
   state:  WizardState
   update: (patch: Partial<WizardState>) => void
+  // Reported upward so App can shift the card left + slide the side panel in
+  // (desktop) - the same App-level mechanism Step 3's property browser uses.
+  onPanelChange?: (open: boolean) => void
+  // The App-level side-panel scroll container to portal the class browser
+  // into (desktop).
+  panelSlot?:     HTMLElement | null
 }
 
 const TARGET_HELP: Record<TargetType, string> = {
@@ -36,13 +45,15 @@ const classNameOf = (ref: string) => {
 }
 const shapeNameOf = (ref: string) => ref.split(':').pop()!
 
-export function Step1Target({ state, update }: Props) {
+export function Step1Target({ state, update, onPanelChange, panelSlot }: Props) {
   const [customPrefix, setCustomPrefix] = useState('')
   const [customNamespace, setCustomNamespace] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   // Remembers which "referenced shape to define" pill was picked, so switching
   // target type keeps the prefilled class/shape names instead of clearing them.
   const [selectedRef, setSelectedRef] = useState<string | null>(null)
+  // Same breakpoint as Step 3/4's side panel - all share the App-level mechanism.
+  const isDesktop = useMediaQuery('(min-width: 1120px)')
 
   const pfx = state.selectedPrefix
   const ns  = state.selectedNamespace
@@ -89,6 +100,23 @@ export function Step1Target({ state, update }: Props) {
       setCustomNamespace('')
     }
   }
+
+  const hasAnyDetectedClasses =
+    state.mode === 'upload' && state.targetType === 'class' && state.suggestedClasses.length > 0
+  // Panel mode only kicks in once the inline pill list would actually wrap
+  // past ~2 lines - measured empirically against the card's fixed 492px
+  // content width using realistic (LUBM-style) class names: 6 classes wraps
+  // to exactly 2 rows, 7 tips into a 3rd. Below this, inline is short enough
+  // that a side panel would be pure overhead for no real benefit.
+  const CLASS_PANEL_THRESHOLD = 6
+  const needsPanelMode = hasAnyDetectedClasses && state.suggestedClasses.length > CLASS_PANEL_THRESHOLD
+
+  // Tell App when the side panel should be open (desktop + something to
+  // browse) - same reporting mechanism Step 3's property browser uses.
+  useEffect(() => {
+    onPanelChange?.(isDesktop && needsPanelMode)
+  }, [isDesktop, needsPanelMode, onPanelChange])
+  useEffect(() => () => onPanelChange?.(false), [onPanelChange])
 
   return (
     <div className="space-y-5">
@@ -249,39 +277,56 @@ export function Step1Target({ state, update }: Props) {
             </InfoTip>
           </label>
 
-          {/* Suggested class pills (upload mode) */}
-          {state.mode === 'upload' && state.targetType === 'class' && state.suggestedClasses.length > 0 && (
-            <div className="space-y-1.5 mb-2">
-              <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
-                Detected classes
-                <InfoTip align="left" className="lowercase">
-                  These are classes found in your uploaded RDF file. Picking one
-                  means the shape will validate nodes with that class.
-                </InfoTip>
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {state.suggestedClasses.map(cls => {
-                  const parent = state.classHierarchy[cls]
-                  return (
-                    <button
-                      key={cls}
-                      onClick={() => update({ targetValue: cls })}
-                      title={parent ? `Subclass of ${parent}` : undefined}
-                      className={`text-xs px-3 py-1 rounded-full border transition-colors mono flex items-center gap-1
-                        ${state.targetValue === cls
-                          ? 'bg-zinc-900 text-white border-zinc-900'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
-                      `}
-                    >
-                      {pfx}:{cls}
-                      {parent && (
-                        <span className="text-[9px] text-zinc-400">⊂ {parent}</span>
-                      )}
-                    </button>
-                  )
-                })}
+          {/* Detected classes: a short list (<=6, comfortably 2 pill-rows or
+              less) stays inline exactly as before this feature existed. A
+              longer list is what actually causes the vertical-stretch problem,
+              so it switches to the browser panel instead - portaled into the
+              App-level side panel on desktop (>=1120px, same mechanism as
+              Step 3's property browser), or rendered inline/stacked below that. */}
+          {hasAnyDetectedClasses && (
+            needsPanelMode ? (
+              <MaybePortal target={panelSlot ?? null} inline={!isDesktop}>
+                <ClassDetectionPanel
+                  classes={state.suggestedClasses}
+                  classHierarchy={state.classHierarchy}
+                  selectedClass={state.targetValue}
+                  pfx={pfx}
+                  onSelect={cls => update({ targetValue: cls })}
+                />
+              </MaybePortal>
+            ) : (
+              <div className="space-y-1.5 mb-2">
+                <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+                  Detected classes
+                  <InfoTip align="left" className="lowercase">
+                    These are classes found in your uploaded RDF file. Picking one
+                    means the shape will validate nodes with that class.
+                  </InfoTip>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {state.suggestedClasses.map(cls => {
+                    const parent = state.classHierarchy[cls]
+                    return (
+                      <button
+                        key={cls}
+                        onClick={() => update({ targetValue: cls })}
+                        title={parent ? `Subclass of ${parent}` : undefined}
+                        className={`text-xs px-3 py-1 rounded-full border transition-colors mono flex items-center gap-1
+                          ${state.targetValue === cls
+                            ? 'bg-zinc-900 text-white border-zinc-900'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'}
+                        `}
+                      >
+                        {pfx}:{cls}
+                        {parent && (
+                          <span className="text-[9px] text-zinc-400">⊂ {parent}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
+            )
           )}
 
           <input

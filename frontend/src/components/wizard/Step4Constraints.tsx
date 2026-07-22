@@ -8,29 +8,17 @@
 // section per SHACL constraint category. Only one section is open at a time.
 
 import { useState, useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import type { WizardState, PropertyConstraints, SubShape } from '@/types'
 import { DATATYPE_OPTIONS, NODEKIND_OPTIONS } from '@/types'
 import { detectConstraintIssues } from '@/utils/constraintWarnings'
 import type { IssueLevel } from '@/utils/constraintWarnings'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { InfoTip } from './InfoTip'
+import { MaybePortal } from './MaybePortal'
 
 // Must match the App side panel's CSS transition duration (duration-200) so the
 // outgoing property's content survives exactly as long as the panel's slide-out.
 const PANEL_SLIDE_MS = 200
-
-// Renders children inline (the stacked fallback) or portaled into the App-level
-// side panel. On desktop with no slot yet it renders nothing (avoids a flash of the
-// editor inside the card before the portal target mounts).
-function MaybePortal({ target, inline, children }: {
-  target: HTMLElement | null
-  inline: boolean
-  children: React.ReactNode
-}) {
-  if (inline) return <>{children}</>
-  return target ? createPortal(children, target) : null
-}
 
 interface Props {
   state:          WizardState

@@ -8,11 +8,14 @@ interface ConfirmModalProps {
   cancelLabel:  string
   onConfirm:    () => void
   onCancel:     () => void
+  // Default (false): neutral confirmation (e.g. skip-upload) - no red, no
+  // icons, matches the app's existing informational styling. Set true for a
+  // genuinely destructive action (e.g. remove all) - styles the confirm
+  // button with the app's existing red palette instead of the neutral dark one.
+  destructive?: boolean
 }
 
-// Generic neutral confirmation dialog (not an error/destructive warning:
-// no red, no icons, matches the app's existing informational styling).
-export function ConfirmModal({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }: ConfirmModalProps) {
+export function ConfirmModal({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel, destructive = false }: ConfirmModalProps) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
     window.addEventListener('keydown', onKeyDown)
@@ -48,7 +51,11 @@ export function ConfirmModal({ title, body, confirmLabel, cancelLabel, onConfirm
           </button>
           <button
             onClick={onConfirm}
-            className="bg-zinc-900 hover:bg-zinc-700 text-white text-sm h-9 px-4 rounded-md transition-colors"
+            className={`text-sm h-9 px-4 rounded-md transition-colors ${
+              destructive
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-zinc-900 hover:bg-zinc-700 text-white'
+            }`}
           >
             {confirmLabel}
           </button>

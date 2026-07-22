@@ -140,6 +140,12 @@ export interface WizardState {
   suggestedClasses:     string[]
   suggestedProperties:  string[]
   propertiesByClass:    Record<string, string[]>
+  // Raw, unmerged sides of propertiesByClass, kept alongside the merged field
+  // above so per-property source (data graph vs. ontology vs. both) can be
+  // recovered - the merged field alone can't tell them apart once combined.
+  // Used by Step 3's detected-properties side panel for its source filter.
+  dataGraphPropertiesByClass: Record<string, string[]>
+  ontologyPropertiesByClass:  Record<string, string[]>
   suggestedConstraints: SuggestedConstraints
   completedShapes:      CompletedShape[]
   // rdfs:subClassOf, child local name -> parent local name (ontology-only;
@@ -152,6 +158,13 @@ export interface WizardState {
   // scoping) since a restriction only holds for the specific class it's
   // attached to - looked up via lookupSuggestedConstraint, not read directly.
   ontologyConstraintsByClass: Record<string, Record<string, Partial<PropertyConstraints>>>
+  // True once an ontology file/paste has been successfully parsed. Unlike
+  // checking whether ontology-derived data is non-empty, this stays accurate
+  // even when the ontology contributed nothing to the current target class
+  // (or nothing at all, e.g. bare owl:Class declarations only) - used to
+  // decide whether Step 3's property panel needs a source filter at all
+  // (only when both uploadedFileName and this are truthy).
+  ontologyUploaded:     boolean
   // True when the data graph's inference_limit_triples gate skipped
   // minCount/maxCount/sh:in/class/numeric/language inference (large file).
   inferenceLimited:     boolean
@@ -191,10 +204,13 @@ export const INITIAL_STATE: WizardState = {
   suggestedClasses:     [],
   suggestedProperties:  [],
   propertiesByClass:    {},
+  dataGraphPropertiesByClass: {},
+  ontologyPropertiesByClass:  {},
   suggestedConstraints: {},
   completedShapes:      [],
   classHierarchy:       {},
   ontologyConstraintsByClass: {},
+  ontologyUploaded:     false,
   inferenceLimited:     false,
   detectedPrefixes:     {},
   selectedPrefix:       'ex',

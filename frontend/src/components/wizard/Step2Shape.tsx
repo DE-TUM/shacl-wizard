@@ -158,9 +158,21 @@ export function Step2Shape({ state, update, completedShapes }: Props) {
             type="text"
             value={state.shapeName}
             onChange={e => update({ shapeName: e.target.value.replace(/\s/g, '') })}
-            className="w-full h-11 px-3 rounded-md border border-zinc-200 text-sm mono
-              focus:outline-none focus:border-zinc-400"
+            className={`w-full h-11 px-3 rounded-md border border-zinc-200 text-sm mono
+              focus:outline-none focus:border-zinc-400 ${state.shapeName ? 'pr-12' : ''}`}
           />
+          {state.shapeName && (
+            <button
+              type="button"
+              onClick={() => update({ shapeName: '' })}
+              title="Clear"
+              aria-label="Clear shape name"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center
+                rounded-full text-zinc-400 hover:text-red-600 hover:bg-red-50 text-3xl leading-none transition-colors"
+            >
+              ×
+            </button>
+          )}
           {!state.shapeName && (
             <div className="absolute inset-0 flex items-center px-3 pointer-events-none">
               <span className="text-sm mono text-zinc-400">

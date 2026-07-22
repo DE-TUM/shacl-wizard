@@ -186,6 +186,9 @@ export function UploadScreen({ state, update, onBack }: Props) {
   // owl:Restriction facts, already class-scoped by the backend - passed through
   // to WizardState as-is (no merge needed, it has no data-graph counterpart).
   const [ontologyConstraintsByClass, setOntologyConstraintsByClass] = useState<Record<string, Record<string, Partial<PropertyConstraints>>>>({})
+  // Whether an ontology has been successfully parsed at all, independent of
+  // whether it contributed any data - see the field's doc comment in types/index.ts.
+  const [ontologyUploaded, setOntologyUploaded] = useState(false)
 
   const [showSkipModal, setShowSkipModal] = useState(false)
 
@@ -200,6 +203,9 @@ export function UploadScreen({ state, update, onBack }: Props) {
     update({
       suggestedConstraints: mergeSuggestedConstraints(dataGraphConstraints, ontologyConstraints),
       propertiesByClass:    mergePropertiesByClass(dataGraphPropertiesByClass, ontologyPropertiesByClass),
+      dataGraphPropertiesByClass,
+      ontologyPropertiesByClass,
+      ontologyUploaded,
       classHierarchy:       ontologyClassHierarchy,
       ontologyConstraintsByClass,
       suggestedClasses:     [...new Set([...dataGraphClasses, ...ontologyClasses])].sort(),
@@ -211,6 +217,7 @@ export function UploadScreen({ state, update, onBack }: Props) {
   }, [
     dataGraphConstraints, dataGraphPropertiesByClass, dataGraphClasses, dataGraphPrefixes,
     ontologyConstraints, ontologyPropertiesByClass, ontologyClassHierarchy, ontologyConstraintsByClass, ontologyClasses, ontologyPrefixes,
+    ontologyUploaded,
   ])
 
   const applyParsedGraph = (
@@ -293,6 +300,7 @@ export function UploadScreen({ state, update, onBack }: Props) {
     setOntologyConstraintsByClass(resp.classRestrictedConstraints)
     setOntologyClasses(resp.classes)
     setOntologyPrefixes(resp.prefixes)
+    setOntologyUploaded(true)
   }
 
   const handleOntologyFile = async (file: File) => {
@@ -332,6 +340,7 @@ export function UploadScreen({ state, update, onBack }: Props) {
     setOntologyConstraintsByClass({})
     setOntologyClasses([])
     setOntologyPrefixes({})
+    setOntologyUploaded(false)
   }
 
   const hasFile = Boolean(state.uploadedFileName) || Boolean(ontologyFileName)

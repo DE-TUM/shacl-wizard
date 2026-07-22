@@ -42,10 +42,13 @@ export default function App() {
   const [state, setState] = useState<WizardState>(INITIAL_STATE)
   const [previousState, setPreviousState] = useState<WizardState | null>(null)
 
-  // Step 4's constraint editor is portaled into a side panel that sits OUTSIDE the
-  // wizard card (a page-level sibling). When open, the whole card column translates
-  // left and the panel slides into the freed space. `panelOpen` is reported up from
-  // Step 4 (desktop only); `slotNode` is the panel's scroll container (portal target).
+  // A single App-level side panel that sits OUTSIDE the wizard card (a
+  // page-level sibling), shared by whichever step currently needs it - Step 3's
+  // detected-properties browser and Step 4's constraint editor (never both at
+  // once, since only one step is mounted at a time). When open, the whole card
+  // column translates left and the panel slides into the freed space.
+  // `panelOpen` is reported up by the active step (desktop only); `slotNode` is
+  // the panel's scroll container (portal target).
   const [panelOpen, setPanelOpen] = useState(false)
   const [slotNode, setSlotNode] = useState<HTMLDivElement | null>(null)
 
@@ -90,6 +93,9 @@ export default function App() {
       suggestedClasses:    state.suggestedClasses,
       suggestedProperties: state.suggestedProperties,
       propertiesByClass:   state.propertiesByClass,
+      dataGraphPropertiesByClass: state.dataGraphPropertiesByClass,
+      ontologyPropertiesByClass:  state.ontologyPropertiesByClass,
+      ontologyUploaded:    state.ontologyUploaded,
       suggestedConstraints: state.suggestedConstraints,
       classHierarchy:      state.classHierarchy,
       ontologyConstraintsByClass: state.ontologyConstraintsByClass,
@@ -178,10 +184,22 @@ export default function App() {
 
         {/* Step content */}
         <div className="fade-up">
-          {state.step === 0 && <Step1Target state={state} update={update} />}
+          {state.step === 0 && (
+            <Step1Target
+              state={state}
+              update={update}
+              onPanelChange={setPanelOpen}
+              panelSlot={slotNode}
+            />
+          )}
           {state.step === 1 && <Step2Shape state={state} update={update} completedShapes={state.completedShapes} />}
           {state.step === 2 && (
-            <Step3Properties state={state} update={update} />
+            <Step3Properties
+              state={state}
+              update={update}
+              onPanelChange={setPanelOpen}
+              panelSlot={slotNode}
+            />
           )}
           {state.step === 3 && (
             <Step4Constraints
@@ -249,7 +267,11 @@ export default function App() {
         </div>
       </WizardCard>
         <aside
-          aria-label="Constraint editor"
+          aria-label={
+            state.step === 0 ? 'Detected classes' :
+            state.step === 2 ? 'Detected properties' :
+                               'Constraint editor'
+          }
           className={`absolute top-0 left-full ml-6 w-[486px] transition-[transform,opacity] duration-200 ease-out
             ${panelOpen ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0 pointer-events-none'}`}
         >

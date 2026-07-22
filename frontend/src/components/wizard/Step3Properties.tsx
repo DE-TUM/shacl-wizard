@@ -2,25 +2,46 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { WizardState, PropertyShape } from '@/types'
 import { suggestProperties } from '@/api/backend'
 import { unwrapSuggested, lookupSuggestedConstraint } from '@/utils/suggestedConstraints'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { InfoTip } from './InfoTip'
+import { MaybePortal } from './MaybePortal'
+import { PropertyDetectionPanel } from './PropertyDetectionPanel'
+import { ConfirmModal } from './ConfirmModal'
 
 function uid() {
   return Math.random().toString(36).slice(2, 8)
 }
 
+// Added Properties only needs a "Show more" button once the list is long
+// enough to be worth paginating - same incremental-reveal convention as
+// PropertyDetectionPanel's detected-properties browser.
+const ADDED_PAGE_SIZE = 10
+
 interface Props {
   state:  WizardState
   update: (patch: Partial<WizardState>) => void
+  // Reported upward so App can shift the card left + slide the side panel in
+  // (desktop) - the same App-level mechanism Step 4's constraint editor uses.
+  onPanelChange?: (open: boolean) => void
+  // The App-level side-panel scroll container to portal the property browser
+  // into (desktop).
+  panelSlot?:     HTMLElement | null
 }
 
-export function Step3Properties({ state, update }: Props) {
+export function Step3Properties({ state, update, onPanelChange, panelSlot }: Props) {
   const pfx = state.selectedPrefix || 'ex'
   const [input, setInput] = useState('')
+  // Same breakpoint as Step 4's side panel - both share the App-level
+  // mechanism (540px card + 486px panel fit side by side above this width).
+  const isDesktop = useMediaQuery('(min-width: 1120px)')
   const [pillSuggestions, setPillSuggestions] = useState<string[]>([])
   const [loadingPills, setLoadingPills] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [addedSearch, setAddedSearch] = useState('')
+  const [showRemoveAllModal, setShowRemoveAllModal] = useState(false)
+  const [visibleAddedCount, setVisibleAddedCount] = useState(ADDED_PAGE_SIZE)
 
   // Fetch AI property suggestions for the pill overlay. Extracted so the retry
   // button can re-run it. Failures are surfaced (see suggestError) instead of
@@ -64,14 +85,31 @@ export function Step3Properties({ state, update }: Props) {
 
   const showOverlay = input === '' && !state.nlParsed && (loadingPills || availablePills.length > 0)
 
-  const classFilteredProperties =
-    state.targetValue && state.propertiesByClass[state.targetValue]
-      ? state.propertiesByClass[state.targetValue]
-      : state.suggestedProperties
+  // Per-source detected-property lists for the side panel, excluding whatever
+  // is already added (mirrors the old classFilteredProperties/uploadSuggestions
+  // fallback: a class with no data-graph-scoped entry falls back to the flat,
+  // ungrouped suggestedProperties list, unchanged from today; the ontology
+  // side has no such flat fallback, since suggestedProperties is data-graph-only).
+  const isAlreadyAdded = (p: string) => state.properties.some(prop => prop.path.toLowerCase() === p.toLowerCase())
 
-  const uploadSuggestions = classFilteredProperties.filter(
-    p => !state.properties.find(prop => prop.path.toLowerCase() === p.toLowerCase())
-  )
+  const rawDataDetected =
+    state.targetValue && state.dataGraphPropertiesByClass[state.targetValue]
+      ? state.dataGraphPropertiesByClass[state.targetValue]
+      : state.suggestedProperties
+  const rawOntologyDetected =
+    (state.targetValue && state.ontologyPropertiesByClass[state.targetValue]) || []
+
+  const dataDetected = rawDataDetected.filter(p => !isAlreadyAdded(p))
+  const ontologyDetected = rawOntologyDetected.filter(p => !isAlreadyAdded(p))
+  const hasAnyDetected = state.mode === 'upload' && (dataDetected.length > 0 || ontologyDetected.length > 0)
+  const showSourceFilter = Boolean(state.uploadedFileName) && state.ontologyUploaded
+
+  // Tell App when the side panel should be open (desktop + something to
+  // browse) - same reporting mechanism Step 4's constraint editor uses.
+  useEffect(() => {
+    onPanelChange?.(isDesktop && hasAnyDetected)
+  }, [isDesktop, hasAnyDetected, onPanelChange])
+  useEffect(() => () => onPanelChange?.(false), [onPanelChange])
 
   const addProperty = (path?: string) => {
     const p = (path ?? input).trim()
@@ -83,9 +121,11 @@ export function Step3Properties({ state, update }: Props) {
     setInput('')
   }
 
-  const addAllSuggestions = () => {
-    // Batch all not-yet-added detected properties into one state update
-    const newProps: PropertyShape[] = uploadSuggestions
+  // Adds every path passed in (the panel's currently-visible/filtered set,
+  // whatever combination of source filter + search produced it) - not
+  // necessarily the full detected list.
+  const addManyProperties = (paths: string[]) => {
+    const newProps: PropertyShape[] = paths
       .filter(p => p.toLowerCase() !== state.targetValue.toLowerCase())
       .map(p => ({ id: uid(), path: p, constraints: unwrapSuggested(lookupSuggestedConstraint(state.suggestedConstraints, state.ontologyConstraintsByClass, state.targetValue, p)) }))
     if (newProps.length === 0) return
@@ -95,6 +135,26 @@ export function Step3Properties({ state, update }: Props) {
   const removeProperty = (id: string) => {
     update({ properties: state.properties.filter(p => p.id !== id) })
   }
+
+  // Removes every added property, regardless of the added-properties search -
+  // an unqualified "Remove all" means all, not just what's currently visible.
+  const removeAllProperties = () => {
+    update({ properties: [] })
+    setShowRemoveAllModal(false)
+  }
+
+  const visibleAddedProperties = state.properties.filter(p =>
+    p.path.toLowerCase().includes(addedSearch.trim().toLowerCase())
+  )
+
+  // Search re-runs against the full added-properties list, not just whatever
+  // page was already revealed - reset back to the first page.
+  useEffect(() => {
+    setVisibleAddedCount(ADDED_PAGE_SIZE)
+  }, [addedSearch])
+
+  const pagedAddedProperties = visibleAddedProperties.slice(0, visibleAddedCount)
+  const hasMoreAdded = visibleAddedProperties.length > pagedAddedProperties.length
 
   const commitRename = (id: string, newPath: string) => {
     const trimmed = newPath.trim()
@@ -201,53 +261,56 @@ export function Step3Properties({ state, update }: Props) {
         )}
       </div>
 
-      {/* Upload-mode suggestions */}
-      {state.mode === 'upload' && uploadSuggestions.length > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
-              Detected in your file:
-              <InfoTip align="left" className="lowercase">
-                These predicates appeared in the uploaded RDF data. Add the ones
-                whose values should be checked by the shape.
-              </InfoTip>
-            </p>
-            <button
-              onClick={addAllSuggestions}
-              className="text-[11px] px-2.5 py-1 rounded-full border border-zinc-300
-                text-zinc-600 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700
-                transition-colors mono shrink-0"
-            >
-              + Add all ({uploadSuggestions.length})
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {uploadSuggestions.map(s => (
-              <button
-                key={s}
-                onClick={() => addProperty(s)}
-                className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-zinc-300
-                  text-zinc-600 hover:border-zinc-500 hover:bg-zinc-50 transition-colors mono"
-              >
-                + {s}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Detected-properties browser: portaled into the App-level side panel on
+          desktop (>=1120px, same mechanism as Step 4's constraint editor), or
+          rendered right here, inline/stacked, below that. */}
+      {hasAnyDetected && (
+        <MaybePortal target={panelSlot ?? null} inline={!isDesktop}>
+          <PropertyDetectionPanel
+            dataDetected={dataDetected}
+            ontologyDetected={ontologyDetected}
+            showSourceFilter={showSourceFilter}
+            onAddOne={addProperty}
+            onAddMany={addManyProperties}
+          />
+        </MaybePortal>
       )}
 
       {/* Property list */}
       {state.properties.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
-            Added properties
-            <InfoTip align="left" className="lowercase">
-              The number badge shows how many SHACL constraints are already
-              attached to that property - such as required count, datatype,
-              or value range. You can configure them in the next step.
-            </InfoTip>
-          </p>
-          {state.properties.map(prop => (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider flex items-center gap-1.5">
+              Added properties
+              <InfoTip align="left" className="lowercase">
+                The number badge shows how many SHACL constraints are already
+                attached to that property - such as required count, datatype,
+                or value range. You can configure them in the next step.
+              </InfoTip>
+            </p>
+            <button
+              onClick={() => setShowRemoveAllModal(true)}
+              className="text-[11px] px-2.5 py-1 rounded-full border border-red-200
+                text-red-600 bg-red-50 hover:bg-red-100 hover:border-red-300
+                transition-colors shrink-0"
+            >
+              Remove all
+            </button>
+          </div>
+          <input
+            type="text"
+            value={addedSearch}
+            onChange={e => setAddedSearch(e.target.value)}
+            placeholder="Search added properties..."
+            className="w-full h-8 px-3 rounded-md border border-zinc-200 text-xs mono
+              focus:outline-none focus:border-zinc-400"
+          />
+          {visibleAddedProperties.length === 0 && (
+            <p className="text-xs text-zinc-400 text-center py-4">
+              No added properties match "{addedSearch}".
+            </p>
+          )}
+          {pagedAddedProperties.map(prop => (
             <div
               key={prop.id}
               className="flex items-center justify-between p-3 rounded-lg border border-zinc-200"
@@ -267,7 +330,10 @@ export function Step3Properties({ state, update }: Props) {
                       className="mono text-sm font-medium text-zinc-800 border-b border-zinc-400 outline-none bg-transparent w-32"
                     />
                   ) : (
-                    <span className="mono text-sm font-medium text-zinc-800">
+                    <span
+                      className="mono text-sm font-medium text-zinc-800 truncate inline-block max-w-[40ch]"
+                      title={prop.path.includes(':') ? prop.path : `${pfx}:${prop.path}`}
+                    >
                       {prop.path.includes(':') ? prop.path : `${pfx}:${prop.path}`}
                     </span>
                   )}
@@ -299,11 +365,32 @@ export function Step3Properties({ state, update }: Props) {
               </div>
             </div>
           ))}
+          {hasMoreAdded && (
+            <button
+              onClick={() => setVisibleAddedCount(c => c + ADDED_PAGE_SIZE)}
+              className="w-full h-8 text-xs text-zinc-500 border border-dashed border-zinc-200
+                rounded-md hover:bg-zinc-50 hover:border-zinc-300 transition-colors"
+            >
+              Show more ({visibleAddedProperties.length - pagedAddedProperties.length} remaining)
+            </button>
+          )}
         </div>
       ) : (
         <div className="text-center py-10 text-zinc-400 text-sm border border-dashed border-zinc-200 rounded-xl">
           No properties yet. Add at least one above.
         </div>
+      )}
+
+      {showRemoveAllModal && (
+        <ConfirmModal
+          title="Remove all properties?"
+          body={`This will remove all ${state.properties.length} added propert${state.properties.length === 1 ? 'y' : 'ies'} from this shape. This cannot be undone.`}
+          cancelLabel="Cancel"
+          confirmLabel="Remove all"
+          destructive
+          onCancel={() => setShowRemoveAllModal(false)}
+          onConfirm={removeAllProperties}
+        />
       )}
     </div>
   )

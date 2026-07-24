@@ -4,6 +4,7 @@ A wizard-style web application that enables non-expert users to generate valid S
 
 Built as part of the Bachelor Practical Course in Data Engineering at TU Munich (SoSe 2026).
 
+[![Watch the demo](docs/thumbnail.png)](https://github.com/DE-TUM/shacl-wizard/releases/download/iswc2026/demo.mp4)
 ---
 
 ## Features

@@ -176,3 +176,4 @@ All variables are set in `backend/.env` (copy from `backend/.env.example`).
 ## License
 
 TU Munich — Bachelor Practical Course, Data Engineering, SoSe 2026.
+
